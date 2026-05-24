@@ -146,3 +146,76 @@ agent-side reminder, or post-session ritual).
   Hermes team is already tracking it.
 - **Bumping `memory_char_limit` above 3000.** Skill ref is explicit
   this is misuse; we have 60% headroom now.
+
+---
+
+## DEFERRED-04 — Enable Honcho Dreamer (deductive + inductive synthesis)
+
+**Date opened:** 2026-05-25
+**Goal addressed:** A3 (≥10 active conclusions, growing over time) and the underlying signal-density problem behind it. Currently 1,187 explicit observations have produced ~0 deductive/inductive rows, so injected memory is verbose verbatim observation echo rather than synthesized conclusions.
+
+**Root cause:** `DREAM.ENABLED=true` by default in v3.0.7, but `DREAM_DEDUCTION_MODEL_CONFIG` and `DREAM_INDUCTION_MODEL_CONFIG` default to `transport=openai, model=gpt-5.4-mini` with no `BASE_URL` override. The deriver ConfigMap wires `DERIVER_MODEL_CONFIG__OVERRIDES__BASE_URL` to our LiteLLM proxy; the equivalent `DREAM_*` env vars are missing, so specialists try to call OpenAI directly, fail (no API key for that endpoint, or wrong model name), and the dream cycle errors out silently from the operator perspective. Same class of bug as the original LiteLLM rewiring work — just for two model configs that werent on the audit list.
+
+This is NOT to be confused with the (incorrect) "embedding gap" hypothesis from earlier in the session. Embeddings are correctly wired to `smart-embedding` via LiteLLM and reconciliation is healthy. The gap is in the specialist model configs.
+
+**Reference research (do not duplicate here):**
+- `kate/docs/memory/honcho/features/dreamer.md` — orchestrator, `run_dream`, `DreamResult`
+- `kate/docs/memory/honcho/features/dream-scheduler.md` — gating + cadence (`DOCUMENT_THRESHOLD`, `MIN_HOURS_BETWEEN_DREAMS`, `IDLE_TIMEOUT_MINUTES`)
+- `kate/docs/memory/honcho/features/specialist-contract.md` — `BaseSpecialist`, per-specialist model routing (§A10)
+- `kate/docs/memory/honcho/features/explicit-deductive.md` — three-level observation schema and why deductive/inductive are currently empty
+
+**Whats queued:** Six ConfigMap env vars wiring both specialist model configs to LiteLLM, applied via GitOps to `apnex/honcho`:
+
+```
+DREAM_DEDUCTION_MODEL_CONFIG__MODEL                = smart-reasoning
+DREAM_DEDUCTION_MODEL_CONFIG__TRANSPORT            = openai
+DREAM_DEDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL  = https://litellm-proxy-5muxctm3ta-km.a.run.app/v1
+DREAM_INDUCTION_MODEL_CONFIG__MODEL                = smart-coder
+DREAM_INDUCTION_MODEL_CONFIG__TRANSPORT            = openai
+DREAM_INDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL  = https://litellm-proxy-5muxctm3ta-km.a.run.app/v1
+```
+
+Existing `honcho-llm-keys` secret already mounted on the deriver pod provides the API key; same `LLM_OPENAI_API_KEY` env var feeds all model configs via the shared `ConfiguredModelSettings` resolution chain.
+
+**Why deduction → smart-reasoning and induction → smart-coder:**
+- Deduction produces high-confidence rollups that get written to peer-card and influence identity-layer claims (`specialist-contract.md §C3`). One-shot quality matters more than cost.
+- Induction is pattern-finding; it runs against larger observation sets and benefits from cheaper-but-still-tool-calling capacity. `smart-coder` proved a working substitute for `smart-reasoning` under load (2026-05-23 LiteLLM rerouting incident).
+
+**Why we are NOT enabling surprisal in this change:**
+`DREAM.SURPRISAL.ENABLED=false` (default). Surprisal adds tree-based pre-filtering with seven backend choices; defer until we see baseline dream cycles work and have data to tune from. One change at a time.
+
+**Cadence we accept by default (no change in this round):**
+```
+DREAM_DOCUMENT_THRESHOLD          50 explicit obs    keep
+DREAM_MIN_HOURS_BETWEEN_DREAMS    8 hours            keep
+DREAM_IDLE_TIMEOUT_MINUTES        60 min             keep
+DREAM_ENABLED_TYPES               ["omni"]           keep (runs both specialists)
+```
+
+With ~1,187 obs queued, the first dream cycle will fire within ~60 min of idle-window-elapse after the deploy.
+
+**Rollout (GitOps via `apnex/honcho`):**
+1. Branch /root/honcho on host.
+2. Patch `manifests/base/configmap.yaml` with the six env vars.
+3. Direct-commit to main (per apnex push convention).
+4. ArgoCD syncs; deriver pod restarts; DreamScheduler initializes.
+5. Wait for first `DreamRunEvent` in deriver logs (look for the ASCII sleep cat: `(っ- ‸ - ς)ᶻ z 𐰁`).
+6. Verify: `SELECT level, COUNT(*) FROM documents GROUP BY level;` shows deductive > 0.
+
+**Acceptance criteria:**
+- A dream cycle completes with `success=True` in the `DreamRunEvent`.
+- `documents.level=deductive` count > 0 within 2 hours of deploy.
+- `honcho_reasoning` queries return ≥1 statement that is NOT verbatim present in any single explicit observation (the synthesis test).
+
+**Rollback:** Single-commit revert of the ConfigMap change in `apnex/honcho`. ArgoCD heals within ~1 min. Alternatively set `DREAM_ENABLED=false` for hard disable.
+
+**Risk register:**
+- *LLM cost spike from background dream cycles.* Mitigation: `MIN_HOURS_BETWEEN_DREAMS=8` caps to ≤3 cycles/day per collection. Watch LiteLLM dashboard for 48h post-deploy.
+- *Misclassification (deductive rollup is wrong).* Mitigation: deduction specialist can write to peer-card (`can_update_peer_card=True`); induction cannot (`=False`). If we see bad peer-card writes, swap deduction model to smart-coder too while we investigate.
+- *Dream cycle bug at this SHA.* Mitigation: per nanoprobe, dreamer code is less battle-tested than deriver. If cycles error consistently, we have a clean rollback and the option to pin a later Honcho release.
+
+**Documentation closure (after verification):**
+- Add a pitfall to `~/.hermes/skills/mlops/honcho-self-host-k3s` SKILL.md: "Dreamer specialist model configs default to OpenAI public API. Wire `DREAM_DEDUCTION_MODEL_CONFIG__*` and `DREAM_INDUCTION_MODEL_CONFIG__*` the same way you wired DERIVER_MODEL_CONFIG, or no deductive/inductive observations will form."
+- Mark this DEFERRED-04 block as ✓ DONE in this file.
+- File a Honcho conclusion via honcho_conclude documenting the change.
+
