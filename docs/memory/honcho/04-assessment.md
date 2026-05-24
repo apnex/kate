@@ -109,17 +109,128 @@ The maintainers acknowledged it explicitly enough to write a terminology note in
 
 ---
 
+## A8 — The deriver does NOT do deductive reasoning; only the dreamer does
+**Date:** 2026-05-24 (updates earlier open A8 placeholder)
+**Tier:** Tier 2 fact with major Tier 3 implication for our system
+
+**Fact** [code: `src/deriver/prompts.py:1-6` file docstring; `src/deriver/prompts.py:55-81` `minimal_deriver_prompt`; `src/deriver/deriver.py:185-200`]: The minimal deriver's production prompt requests ONLY `[EXPLICIT]` atomic facts. It does NOT request `[DEDUCTIVE]` premises-and-conclusions. The `DeductiveObservation` and `InductiveObservation` schemas exist (`src/utils/representation.py:64-95`) and are written to the database at `level='deductive'`/`level='inductive'`, but the minimal deriver never produces them.
+
+**Assessment:** This directly contradicts `docs/v3/documentation/core-concepts/reasoning.mdx` which describes the deriver as "[extracting] explicitly stated [facts], which serve as premises to scaffold deductive conclusions." At this SHA, that's not what the deriver does. Strong hypothesis based on architecture: the dreamer (specifically `src/dreamer/specialists.py`, 742 lines) is where deductive/inductive/abductive reasoning happens, reading explicit observations from the database and writing back higher-order observations with `source_ids` traceback.
+
+**Implication for our system:** for any quality assessment of Honcho's reasoning depth, we need to evaluate at the dreamer-output level, not the deriver-output level. Querying a peer-representation immediately after a message gives explicit observations only; deeper reasoning has its own (slower) cadence.
+
+**Implication for the docs:** the reasoning.mdx page is misleading for new users. The Honcho project should be made aware (low priority — file an issue post-probe).
+
+---
+
+## A9 — No forgetting / TTL / decay mechanism observed
+**Date:** 2026-05-24 (updates earlier open A9 placeholder, partial answer)
+**Tier:** Tier 2 fact (negative finding) with Tier 3 implication
+
+**Fact:** Across the batch-1 feature spec reads (deriver, representation save, collection storage), no time-based decay, TTL, or forgetting mechanism is invoked. Observations are written, optionally deduplicated, and persist indefinitely. The only modulation is the `DEDUPLICATE: bool = True` toggle at write time.
+
+**Assessment:** Confirmed at the deriver/storage layer. Open question for batches 2-4: does the reconciler, dreamer, or any subsystem implement TTL/decay/forgetting? The dreamer's "consolidation" capability mentioned in reasoning.mdx could be a softer form of forgetting (consolidating multiple observations into one, deleting sources). To-verify in `consolidation` feature spec.
+
+**Implication for G4 (memory-system-as-evolving-state):** if no forgetting exists anywhere, Honcho is monotonic-growth — observations accumulate forever, with retrieval ranking as the only filter. This is a known design space (vs. Letta's archival memory which has explicit move-to-archive lifecycle). Whether monotonic-growth is right for our use case depends on retrieval quality at large N. To-evaluate alongside dialectic-chat spec.
+
+---
+
+## A10 — Three observation levels in schema (explicit/deductive/inductive); production deriver fills only explicit
+**Date:** 2026-05-24
+**Tier:** Tier 2 fact, Tier 3 interpretation
+
+**Fact** [code: `src/utils/representation.py:59-95`]: Three observation-level schemas exist. The minimal-deriver path fills only `explicit`. Storage and read paths support all three.
+
+**Assessment:** This is design-for-extensibility — the storage and read paths support the richer model so background subsystems can backfill higher-order observations later. The architectural seam between deriver-output and dreamer-output is **`source_ids` tree traversal**: deductive/inductive observations reference their source explicit observations, enabling provenance queries.
+
+**Implication for G3 (auditable memory):** Honcho gives us provenance-by-construction. Any higher-order observation can be traced back through `source_ids` to source explicit observations, and from those via `message_ids` metadata to source messages. **This is a major positive for our goals.**
+
+---
+
+## A11 — Abductive reasoning is documented but not schematised
+**Date:** 2026-05-24
+**Tier:** Tier 2 fact (negative finding) with Tier 3 implication
+
+**Fact** [negative search: `grep -r "Abductive" src/` returns no `AbductiveObservation` class at this SHA]: The reasoning docs claim four modes (explicit, deductive, inductive, abductive). The schema implements three. Abductive is not a distinct schema level.
+
+**Assessment:** Either abduction is approximated by the inductive-level outputs (loose categorisation by the dreamer), or it is an unimplemented promise from the docs. Worth checking the dreamer's specialist roster (`src/dreamer/specialists.py`) for any "Hypothesiser" / "Detective" / "Explainer" specialist that performs abduction without being named so in the schema.
+
+**Implication:** Marketing-vs-code mismatch is mild — the schema is extensible, abduction *could* be added as a fourth level without breaking changes. Not a sovereignty/correctness issue, but worth noting for accurate expectation-setting.
+
+---
+
+## A12 — `DEDUPLICATE` defaults to True; algorithm characterised in feature `consolidation`
+**Date:** 2026-05-24 (updates earlier open A12 placeholder, partial answer)
+**Tier:** Tier 2 fact with Tier 3 implication
+
+**Fact** [code: `src/config.py:760` `DEDUPLICATE: bool = True`; `src/crud/representation.py:198` passes `deduplicate=settings.DERIVER.DEDUPLICATE` to `crud.create_documents`]: Deduplication is on by default. The actual algorithm lives in `src/crud` and has not yet been read.
+
+**Assessment:** At least one form of consolidation (write-time dedup) is real and on by default. Whether this is content-hash dedup, semantic-similarity dedup, or LLM-judged dedup matters significantly for evaluating Honcho's consolidation capability. To-resolve in the `consolidation` feature spec (batch 3).
+
+---
+
+## A13 — N-observer write amplification: storage cost is linear in observer count
+**Date:** 2026-05-24
+**Tier:** Tier 3 operational implication
+
+**Fact** [code: `src/deriver/deriver.py:200-222` per-observer save loop]: One deriver call (single LLM call, single embedding batch) writes the same observations to N collections — one per observer in the session.
+
+**Assessment:** For multi-peer sessions (group chats, multi-agent simulations), storage cost scales linearly with peer count for the same conversation content. A 10-peer session stores observations 10x in 10 separate `(observer, observed)` collections. Computational cost is amortised (LLM call + embedding batch are shared); storage cost is not.
+
+**Operator implication:** Session size matters for deployment sizing. For our single-user-plus-assistant deployment this is 2x at worst (alice-about-alice + assistant-about-alice). Tolerable. For any future "agent swarm" use case, would need session/observer scoping configuration to avoid quadratic blowup.
+
+---
+
+## A14 — Theory-of-mind at the storage layer is structurally unusual and architecturally significant
+**Date:** 2026-05-24
+**Tier:** Tier 3 interpretation (cross-substrate-comparison-adjacent — kept abstract here, will inform crossprobe)
+
+**Fact** [code: `src/crud/representation.py:46-58` `RepresentationManager(observer, observed)`; `:151-156` collection identity is `(workspace, observer, observed)`]: Perspectival pairs of peers are the storage key, not just named entities.
+
+**Assessment:** Most memory substrates we surveyed in the substrate-landscape doc treat per-agent memory as a single namespace, with multi-agent reasoning emerging at query time. Honcho makes the perspectival pair structural. This is a load-bearing design decision that:
+- Pays off when the system genuinely needs "what Alice knows about Bob, separately from what Bob knows about himself"
+- Costs (storage amplification per A13) when the perspectival distinction isn't used
+- Encodes one philosophical commitment (peers as observers of each other) at the schema level
+
+**Cross-substrate note (for crossprobe, NOT for this probe):** the alternative — single peer-memory namespaces — should be characterised in other substrate audits. Don't add comparison here per the no-cross-substrate-refs rule.
+
+---
+
+## A15 — Schema migration scar: `message_ids` was `list[tuple]`, now `list[int]`
+**Date:** 2026-05-24
+**Tier:** Tier 2 fact, Tier 3 architectural-maturity signal
+
+**Fact** [code: `src/utils/representation.py:18-49` `flatten_message_ids` with backward-compat docstring]: The schema for observation-source-message references was `list[tuple[int, int]]` (representing message ranges) and is now `list[int]` (individual IDs). Backward-compat shim handles old data.
+
+**Assessment:** Honcho has done at least one non-trivial schema migration in production and kept backward-compat. Combined with the App→Workspace and User→Peer renames, this indicates a substrate that has iterated on its model in response to learning. Positive signal for architectural maturity; minor positive signal for upgrade-safety (migrations are real, not optional).
+
+---
+
+## A16 — Strong telemetry posture: every deriver batch is fully traced
+**Date:** 2026-05-24
+**Tier:** Tier 3 interpretation
+
+**Fact** [code: `src/deriver/deriver.py:287-317` `RepresentationCompletedEvent` emission carrying 19 fields; `:36` `@with_sentry_transaction("minimal_deriver_batch", op="deriver")`; `:266-284` token-breakdown invariant warnings]: Each deriver batch emits a CloudEvent with full timing breakdown (context-prep ms, LLM-call ms, total ms), token accounting (input/output/messages/prompt/extra-context), batch-cap and input-cap snapshots, and observer count. Sentry transaction wrapping every batch. Invariant warnings logged when token-breakdown maths don't add up.
+
+**Assessment:** This is production-grade observability. The team building Honcho clearly runs it at scale and has been bitten by silent-drift failures (note the "provider tokenization drift" warning string at line 272 — that's the war story embedded in the code). Strongly positive signal for operational viability.
+
+**For our deployment:** the Prometheus + CloudEvents + Sentry surface gives us excellent debugging if anything goes wrong. We just need a CloudEvents sink (and Prometheus scraping, which we already have via k3s).
+
+---
+
 ## Open assessments (placeholders — fill as feature specs surface evidence)
 
-- **A8 — Does the dreamer's "surprisal" actually use information theory, or is it a metaphor?** Reading `src/dreamer/surprisal.py` (492 lines) during the dreamer feature spec will resolve this. If actual entropy/surprise computation, that's a significant differentiator. If metaphor only, that's a finding worth noting (and a marketing-vs-code mismatch).
+- **A8/A9/A12 — partially resolved above; remaining questions deferred to batch 2/3 specs.**
 
-- **A9 — Does Honcho have any forgetting / TTL / decay mechanism?** Apparent answer from the structure is "no, only consolidation/dedup at write time" — but feature specs may reveal a lifecycle subsystem I haven't yet found. Open.
+- **A17 (NEW) — Does the dreamer actually use the source_ids tree-traversal pattern to backfill deductive/inductive observations referencing explicit ones?** This is the key architectural hypothesis from A8 and A10. Resolves in the dreamer feature spec (batch 3).
 
-- **A10 — How portable is Honcho's API conceptually (G7)?** The primitives (workspace/peer/session/message/conclusion) are universal-ish, but `(observer, observed)` collection keying is structurally unusual. Will the dialectic agent's tool surface (`search_memory`, `get_observation_context`) be reproducible against another substrate, or Honcho-shaped? Resolves in the dialectic feature spec.
+- **A18 (NEW) — What's the actual deduplication algorithm in `crud.create_documents`?** Content hash, semantic similarity, or LLM-judged? Resolves in the `consolidation` feature spec (batch 3).
 
-- **A11 — What's the dialectic agent's actual quality vs depth trade?** We tune `dialecticDepth=3, reasoningLevel=medium`. The source will reveal what these knobs actually change. If `depth=3` means "3 reasoning passes" the cost model is clear; if it means something deeper (multi-hop graph traversal, recursive reconciliation), the cost model is murkier.
+- **A19 — How portable is Honcho's API conceptually (G7)?** The primitives are universal-ish, but `(observer, observed)` collection keying is structurally unusual. Will the dialectic agent's tool surface be reproducible against another substrate, or Honcho-shaped? Resolves in the `dialectic-chat` feature spec (batch 2).
 
-- **A12 — Does the deriver actually consolidate, or does it append-and-rely-on-retrieval-ranking?** Major behavioural distinction. The `consolidation` claim in `reasoning.mdx` needs source verification — the actual algorithm might be "extract, embed, store" with no consolidation step at all, and "consolidation" might happen only at dialectic-query time via the tools.
+- **A20 — What does `dialecticDepth` actually mean?** If `depth=3` means "3 reasoning passes" the cost model is clear; if it means something deeper (multi-hop graph traversal, recursive reconciliation), the cost model is murkier. Resolves in `dialectic-chat`.
+
+- **A21 (NEW) — Does the worker-lease model serialise per `(observer, observed)` pair?** Determines whether multiple workers can race on the same collection (rare collision) or are statically partitioned (no race possible). Affects assessment of A5. Resolves in `worker-lease-model` (batch 4).
 
 ---
 
