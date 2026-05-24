@@ -74,15 +74,11 @@ The system SHALL provide an asynchronous dream-cycle orchestrator that, per `(wo
 | Source | `src/dreamer/specialists.py:429` — `class DeductionSpecialist(BaseSpecialist)` |
 | Source | `src/dreamer/specialists.py:613` — `class InductionSpecialist(BaseSpecialist)` |
 | Source | `src/dreamer/specialists.py:29` — `SPECIALISTS` list exported |
-| Source | `src/dreamer/surprisal.py:1-12` — file docstring "Computes geometric surprisal scores for observations using tree-based [embeddings]" |
-| Source | `src/dreamer/surprisal.py:46-68` — `sample_observations_with_surprisal` flow: fetch → embed → tree → score → normalize → rank → threshold → top-N |
-| Source | `src/dreamer/surprisal.py:104-106` — minimum-observations short-circuit |
-| Source | `src/dreamer/surprisal.py:122-128` — invalid-surprisal filtering (inf/nan) |
-| Source | `src/dreamer/trees/` — subdirectory implementing tree structures used for surprisal computation |
+| Spec | `features/surprisal.md` — full pipeline, seven tree backends, sampling strategies, config surface |
 
 ## Behaviour notes (Tier 3 — scoped to this feature)
 
-- **Surprisal is real information theory, not metaphor.** Geometric surprisal is computed over tree-organised embeddings, normalised to [0,1], filtered by threshold. The "interesting observations" framing in the orchestrator docstring is grounded in `-log p` over a learned/computed distribution, not a marketing label. See `04-assessment.md §A28`.
+- **Surprisal is a separable mechanism.** Promoted to its own spec at `features/surprisal.md`. The dreamer-level claim is only that surprisal can pre-filter observations before specialists run; the algorithm, tree backends, sampling strategies, and config block live in the surprisal spec.
 - **Two specialists, not three or four.** No abductive specialist class exists at this SHA. Schema-extensible (the InductiveObservation/DeductiveObservation hierarchy could accommodate an AbductiveObservation; a third specialist class would follow the BaseSpecialist contract). Confirms A11.
 - **Specialists are "self-directed agents"**, not single LLM calls. They iterate over the observation space, can fetch context, and write multiple observations per run (`total_iterations` field on DreamResult). Cost model is materially different from the minimal deriver.
 - **Surprisal hints don't constrain specialists.** Per orchestrator docstring line 11: "specialists are free to follow the evidence wherever it leads." Surprisal informs but doesn't dictate. Tunable bias toward novelty, not hard filter.
