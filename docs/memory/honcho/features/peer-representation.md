@@ -2,66 +2,68 @@
 
 **Substrate:** honcho v3.0.7 (SHA `7470866`)
 **Category:** Storage
-**Triangulation:** ✓ Triangulated (claim + doc + source agree on existence and shape; one mismatch on internal vocabulary, see Behaviour notes)
+**Triangulation:** ✓ Triangulated
 
-## What it is (substrate's own terms)
+## What it is
 
-A **peer representation** is the accumulated state Honcho builds about one peer from one observer's perspective. Concretely, it is the set of `Document` rows in a `Collection` keyed `(observer, observed)`. Each document stores one **observation** (Honcho's internal term) / **conclusion** (Honcho's public-API term) extracted from messages — with content, embedding, level (`explicit` / `deductive` / `inductive`), source `message_ids`, optional `premises`, and `message_created_at` timestamp.
-
-Representations are the persistent memory artefact that all of Honcho's reasoning produces, and the substrate that the Dialectic agent searches at query time.
+A peer-representation is the persistent memory artefact about an observed peer, scoped to one observer's view. Identified by the pair `(observer_peer, observed_peer)`. Realised in storage as a Vector Collection keyed by `(workspace, observer, observed)` containing a stream of Document objects. Each Document carries an `Observation` payload (explicit / deductive / inductive) plus metadata. Same primitive supports self-observation (observer == observed) and theory-of-mind (observer != observed) by varying the pair.
 
 ## Requirement
 
-The system SHALL maintain, for every `(observer, observed)` peer pair within a workspace, a vector-indexed collection of observations derived from messages authored by the observed peer. Each observation is attributable to one or more source messages, carries a content payload and embedding, and is tagged with its reasoning level.
+The system SHALL persist, per `(observer, observed)` peer pair, a Collection of Document objects whose content is observations about the observed peer, derived from messages, and SHALL return that Collection on demand for downstream retrieval.
 
 ## Scenarios
 
-### Scenario: deriver writes observations after message extraction
-- GIVEN one or more messages from `peer_alice` have been processed by the minimal deriver
-- AND the resulting `Representation` contains at least one non-empty observation
-- WHEN `RepresentationManager.save_representation` is invoked for each observer in `observers`
-- THEN one `Collection` row exists (or is created) per `(observer, peer_alice)` pair
-- AND one `Document` row is created per observation in that collection
-- AND each document has `level=explicit` (or `level=deductive` if from a `DeductiveObservation`)
-- AND each document records its source `message_ids`, `session_name`, `embedding`, and `message_created_at` in metadata
+### Scenario: writing self-observations for a single-peer session
+- GIVEN a session with one peer `alice` and a new message authored by `alice`
+- WHEN the deriver processes that message
+- THEN one Collection identified by `(workspace, alice, alice)` exists
+- AND it contains documents whose `metadata` references the source message
 
-### Scenario: single LLM call writes to multiple observer collections
-- GIVEN a multi-peer session with observers `[peer_bob, peer_charlie]` and observed `peer_alice`
-- WHEN the deriver processes a batch of `peer_alice`'s messages
-- THEN exactly one LLM call extracts observations
-- AND `save_representation` is invoked once per observer, writing the same observations to both `(peer_bob, peer_alice)` and `(peer_charlie, peer_alice)` collections
-- AND embedding generation is performed once per observation (batched via `embedding_client.simple_batch_embed`), but documents are written per-collection
+### Scenario: writing theory-of-mind observations for a multi-peer session
+- GIVEN a session with peers `alice` and `bob`, and a message from `alice`
+- WHEN the deriver processes that message
+- THEN a Collection `(workspace, alice, alice)` is populated with self-observations
+- AND a Collection `(workspace, bob, alice)` is populated with bob's-view-of-alice observations
+- AND the LLM call that produced both is a single shared call
 
-### Scenario: deduplication is configurable
-- GIVEN `settings.DERIVER.DEDUPLICATE` is enabled
-- WHEN documents are created via `crud.create_documents`
-- THEN duplicate-detection logic is applied at write time (algorithm characterised in feature `consolidation`)
-- OTHERWISE all observations are written unconditionally as new documents
+### Scenario: reading a representation
+- GIVEN any `(observer, observed)` pair with existing observations
+- WHEN a caller invokes `RepresentationManager.get_representation` or `RepresentationManager.get_working_representation`
+- THEN a `Representation` object is returned containing the observations
+- AND the working representation is capped at `WORKING_REPRESENTATION_MAX_OBSERVATIONS` (default 100)
 
-### Scenario: empty representation does not write
-- GIVEN the deriver returned a `Representation` with no explicit and no deductive observations
-- WHEN `save_representation` is called
-- THEN no documents are created, the call returns `0`, and a warning is logged
+### Scenario: schema migration backward-compat for message references
+- GIVEN observations persisted under the old `message_ids: list[tuple[int, int]]` shape
+- WHEN read at this SHA
+- THEN `flatten_message_ids` transparently returns `list[int]` regardless of stored shape
 
 ## Evidence
 
 | Type | Reference |
 |---|---|
-| Claim | `docs/v3/documentation/core-concepts/architecture.mdx` §Key Primitives — "peer representations" as the central memory artefact |
-| Claim | `docs/v3/documentation/core-concepts/reasoning.mdx` §How It Works — "reasoning outputs… are stored as part of peer representations, indexed in vector collections" |
-| Claim | `CLAUDE.md` §Key Primitives — Collections keyed by `(observer, observed)` peer pairs |
-| Doc | `docs/v3/documentation/core-concepts/representation.mdx` (to be deeper-read in dreamer/dialectic specs) |
-| Source | `src/utils/representation.py:50-95` — `ExplicitObservationBase`, `DeductiveObservationBase`, `InductiveObservationBase`, `ObservationMetadata` schemas |
-| Source | `src/crud/representation.py:46-58` — `RepresentationManager(workspace, observer, observed)` constructor |
-| Source | `src/crud/representation.py:60-138` — `save_representation` batch-embed → per-collection write |
-| Source | `src/crud/representation.py:144-198` — `_save_representation_internal` — collection get-or-create, document `level` field assignment |
-| Source | `src/deriver/deriver.py:185-222` — `Representation.from_prompt_representation` → loop over `observers` invoking `save_representation` |
-| Source | `src/crud/representation.py:198` — `deduplicate=settings.DERIVER.DEDUPLICATE` toggle |
+| Claim | `CLAUDE.md` §Key Primitives — "Collections are keyed by (observer, observed) peer pairs and contain Documents" |
+| Doc | `docs/v3/documentation/core-concepts/architecture.mdx` §Memory & Representations |
+| Source | `src/utils/representation.py:18-49` `flatten_message_ids` with backward-compat for old `list[tuple]` shape |
+| Source | `src/utils/representation.py:59-128` observation-class hierarchy (Explicit/Deductive/Inductive bases + concrete variants) |
+| Source | `src/crud/representation.py:46-58` `RepresentationManager(observer, observed)` constructor |
+| Source | `src/crud/representation.py:120-156` `save_representation` — writes to collection identified by `(workspace, observer, observed)` |
+| Source | `src/crud/representation.py:198` `deduplicate=settings.DERIVER.DEDUPLICATE` flag passed to `crud.create_documents` |
+| Source | `src/config.py:760` `DEDUPLICATE: bool = True` (default on) |
+| Source | `src/config.py` `WORKING_REPRESENTATION_MAX_OBSERVATIONS: 100` (default) |
 
-## Behaviour notes (Tier 3 — prober analysis)
+## Behaviour notes (Tier 3 — scoped to this feature)
 
-- **Vocabulary dual** [see `04-assessment.md` §A4]: the persistent artefact is called "conclusion" in the public `/conclusions` API and "observation" everywhere in code. They are the same thing. Searching code for "conclusion" yields almost nothing.
-- **One LLM call → N collection writes.** For multi-peer sessions, the cost model is: one LLM call (constant) + N embedding batches (linear in observers) + N collection writes (linear). The LLM-call cost is amortised across observers.
-- **Three observation `level` values exist in code** (`explicit`, `deductive`, `inductive`), but the minimal deriver only produces `explicit` (see feature `minimal-deriver`). `deductive` and `inductive` levels exist as schema slots filled by other code paths (presumably the dreamer — to be verified in feature `dreamer`).
-- **Schema migration scar** [code: `src/utils/representation.py:18-49` `flatten_message_ids`]: `message_ids` was previously `list[tuple[int, int]]` (ranges), now `list[int]` (individual IDs). Backward-compat shim is present. Architectural maturity signal — Honcho is past v1 and has migrated production schemas.
-- **Dream triggering is coupled to representation save** [code: `src/crud/representation.py:15` imports `check_and_schedule_dream`]: after a representation is saved, a dream cycle may be scheduled. The dreamer is not invoked on a pure timer — it is reactively triggered by representation writes. This is the seam between deriver and dreamer.
+- Collection identity is the triple `(workspace, observer, observed)` — observer first, observed second. In code, `observer` is the entity *holding* the representation; `observed` is the entity *being represented*.
+- Three observation schemas exist (explicit / deductive / inductive). At this SHA, only explicit observations are produced by the production deriver — see `features/minimal-deriver.md` Behaviour notes.
+- The working representation has a hard cap (default 100 observations); retrieval beyond that requires the full representation API path.
+- Deduplication is on by default at write time; the algorithm itself lives in `crud.create_documents` and is not characterised by this spec (see `04-assessment.md §A18`).
+- Schema-migration backward-compat present for `message_ids` shape — indicates non-trivial production migrations have occurred (see `04-assessment.md §A15`).
+- Storage cost is linear in observer count per session; see `04-assessment.md §A13` for the cross-cutting implication.
+
+## Configuration surface
+
+| Knob | Default | Source |
+|---|---|---|
+| `DERIVER.DEDUPLICATE` | `True` | `src/config.py:760` |
+| `DERIVER.WORKING_REPRESENTATION_MAX_OBSERVATIONS` | `100` | `src/config.py` |
