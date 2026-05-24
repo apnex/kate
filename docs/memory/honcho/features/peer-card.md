@@ -6,7 +6,7 @@
 
 ## What it is
 
-A peer card is a small, structured list of biographical strings describing an observed peer from an observer's perspective. Storage is **not** a dedicated table but a JSONB key inside the *observer* Peer row's `internal_metadata` column. The key is `"peer_card"` for self-observation (observer == observed) or `"{observed}_peer_card"` for cross-observation. Peer cards are loaded upfront by the dialectic agent (when `configuration.peer_card.use=true`) and injected into the system prompt; they can be updated mid-query by the dialectic agent's `update_peer_card` tool (`features/search-tools.md`).
+A peer card is a small, structured list of biographical strings describing an observed peer from an observer's perspective. Storage lives at JSONB key `"peer_card"` (self-observation) or `"{observed}_peer_card"` (cross-observation) inside the observer Peer row's `internal_metadata` column. Peer cards are loaded upfront by the dialectic agent and can be updated mid-query via the `update_peer_card` tool.
 
 ## Requirement
 

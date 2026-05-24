@@ -54,10 +54,11 @@ The system SHALL persist, per `(observer, observed)` peer pair, a Collection of 
 
 ## Behaviour notes (Tier 3 — scoped to this feature)
 
+- **The `(observer, observed)` triple is the substrate's perspectival keying invariant — enforced at storage, retrieval, AND write paths.** Every read API (`features/document-query-strategies.md`), every write API (`features/dialectic-tool-abi.md`), every reconcile API (`features/reconciler.md`), and every collection lookup go through this same key shape. There is no "look across observers" surface anywhere in the substrate — that constraint is structural, not conventional.
 - Collection identity is the triple `(workspace, observer, observed)` — observer first, observed second. In code, `observer` is the entity *holding* the representation; `observed` is the entity *being represented*.
 - Three observation schemas exist (explicit / deductive / inductive). At this SHA, only explicit observations are produced by the production deriver — see `features/minimal-deriver.md` Behaviour notes.
 - The working representation has a hard cap (default 100 observations); retrieval beyond that requires the full representation API path.
-- Deduplication is on by default at write time; the algorithm itself lives in `crud.create_documents` and is not characterised by this spec (see `04-assessment.md §A18`).
+- Deduplication is on by default at write time; the algorithm is specced in `features/consolidation.md`.
 - Schema-migration backward-compat present for `message_ids` shape — indicates non-trivial production migrations have occurred (see `04-assessment.md §A15`).
 - Storage cost is linear in observer count per session; see `04-assessment.md §A13` for the cross-cutting implication.
 

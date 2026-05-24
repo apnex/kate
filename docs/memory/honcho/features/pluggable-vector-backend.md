@@ -6,7 +6,7 @@
 
 ## What it is
 
-The vector store abstraction is a genuine plug point: an abstract base class (`VectorStore`) defines a contract (`upsert_many`, `query`, namespace helpers, etc.); two concrete implementations exist (`LanceDBVectorStore` ≈ 405 LOC, `TurbopufferVectorStore` ≈ 367 LOC) implementing the contract; namespace generation is centralised in the base class to enforce the strictest backend's constraints (Turbopuffer's `[A-Za-z0-9-_.]{1,128}`). The namespace strategy distinguishes **document embeddings** (perspectival: `{prefix}.doc.{hash(workspace, observer, observed)}`) from **message embeddings** (workspace-global: `{prefix}.msg.{hash(workspace)}`). Selection of which backend runs is configuration-driven via `settings.VECTOR_STORE`.
+The vector store abstraction defines a contract (`upsert_many`, `query`, namespace helpers, etc.) via an abstract base class (`VectorStore`); two concrete implementations exist (`LanceDBVectorStore`, `TurbopufferVectorStore`). Namespace generation is centralised in the base class to enforce the strictest backend's constraints (Turbopuffer's `[A-Za-z0-9-_.]{1,128}`). The namespace strategy distinguishes **document embeddings** (perspectival: `{prefix}.doc.{hash(workspace, observer, observed)}`) from **message embeddings** (workspace-global: `{prefix}.msg.{hash(workspace)}`). Backend selection is configuration-driven via `settings.VECTOR_STORE`.
 
 ## Requirement
 

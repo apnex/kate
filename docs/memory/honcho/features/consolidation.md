@@ -6,7 +6,7 @@
 
 ## What it is
 
-Consolidation in Honcho is **semantic-similarity deduplication with information-preserving retention**. When `DERIVER.DEDUPLICATE=true` (default), every new observation passes through `is_rejected_duplicate` before persistence. The function uses two-stage logic: (1) find the nearest existing observation by cosine similarity within the same `(observer, observed)` collection, gated at distance ≤ 0.05 (similarity ≥ 0.95); (2) if a near-duplicate exists, choose the winner by token-set-difference score weighted toward unique information, with ties broken in favour of the new document. The loser is soft-deleted (`deleted_at` set); the reconciler later removes its vectors and hard-deletes the row.
+When `DERIVER.DEDUPLICATE=true` (default), every new observation passes through `is_rejected_duplicate` before persistence. The function uses two-stage logic: (1) find the nearest existing observation by cosine similarity within the same `(observer, observed)` collection, gated at distance ≤ 0.05 (similarity ≥ 0.95); (2) if a near-duplicate exists, choose the winner by token-set-difference score weighted toward unique information, with ties broken in favour of the new document. The loser is soft-deleted (`deleted_at` set); the reconciler later removes its vectors and hard-deletes the row.
 
 ## Requirement
 
@@ -69,7 +69,9 @@ The system SHALL, when deduplication is enabled, compare every incoming observat
 
 ## Behaviour notes (Tier 3 — scoped to this feature)
 
+- **Document query strategies** (semantic, recent, most-derived, filter-only) are promoted to `features/document-query-strategies.md`. This spec covers consolidation's **write-side dedup**; that spec covers the read paths.
 - **The algorithm is hybrid, not pure.** Cosine similarity finds candidates; token-set-diff scoring picks the winner. This is more sophisticated than hash-based dedup (catches paraphrases) and cheaper than LLM-judged dedup (no extra inference call). Resolves `04-assessment.md §A18`.
+- **Latest-wins on cosine-near match.**
 - **Information-preserving bias.** The `unique_tokens * 10 + total_tokens` weighting heavily favours observations with novel information. A short observation that adds new tokens beats a longer observation that merely restates existing ones.
 - **Tie-breaking favours recency (new beats equal old).** Subtle but matters: if extracted observations are oscillating between two equivalent phrasings, the most recent always wins. Avoids stale-content lock-in.
 - **Soft-delete prevents data loss during partial failures.** Hard-delete happens only after vector cleanup; if the reconciler crashes mid-cleanup, the row is still queryable until the next cycle.

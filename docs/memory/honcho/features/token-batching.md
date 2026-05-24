@@ -52,7 +52,9 @@ The system SHALL accumulate enqueued messages into batches bounded by a token ca
 
 ## Behaviour notes (Tier 3 — scoped to this feature)
 
-- The docs' "approximately 1000 tokens" figure is the `REPRESENTATION_BATCH_MAX_TOKENS = 1024` default. Configurable from 128 to 16384.
-- `FLUSH_ENABLED=false` by default means partial batches sit until the cap is reached. A low-traffic peer can wait indefinitely for a flush. Operators with sparse traffic should enable flush or accept high derive latency.
-- `MAX_INPUT_TOKENS=25000` is a separate, larger cap on the actual LLM input — it includes prompt overhead beyond message content. Batch cap (1024) bounds *content tokens*; input cap (25000) bounds *total LLM input*.
-- `QueueBatchResult` carries `hit_batch_token_cap` and `was_flush_enabled` as observable signals for telemetry and post-hoc analysis of batching behaviour.
+- **Token-batching is a coalescing optimisation, not back-pressure.** The cap bounds per-call LLM cost but does NOT limit deriver throughput — once a batch flushes, the next batch can start immediately. Operators expecting batching to provide queue depth control should pair it with worker-lease budgeting (`features/worker-lease-model.md`).
+- **Batching is the substrate's primary cost lever for derivation.** A 10x increase in batch size produces ~10x reduction in LLM calls (with constant per-call overhead). Tuning this knob is more impactful than tuning model selection for high-volume workspaces.
+- **The "approximately 1000 tokens" figure** is the `REPRESENTATION_BATCH_MAX_TOKENS = 1024` default. Configurable from 128 to 16384.
+- **`FLUSH_ENABLED=false` by default** means partial batches sit until the cap is reached. A low-traffic peer can wait indefinitely for a flush. Operators with sparse traffic should enable flush or accept high derive latency.
+- **`MAX_INPUT_TOKENS=25000` is a separate, larger cap on the actual LLM input** — it includes prompt overhead beyond message content. Batch cap (1024) bounds *content tokens*; input cap (25000) bounds *total LLM input*.
+- **`QueueBatchResult` carries `hit_batch_token_cap` and `was_flush_enabled`** as observable signals for telemetry and post-hoc analysis of batching behaviour.

@@ -6,7 +6,7 @@
 
 ## What it is
 
-The reconciler is a periodic healing job that syncs Documents and Message embeddings to the external vector store on a rolling basis. It does not generate embeddings or observations; it heals missed writes. Its existence assumes that primary write paths (deriver, dialectic write tools) may fail to complete vector-store upserts due to crashes between Postgres commit and vector-store upsert. The reconciler scans for `sync_state='pending'` rows past their backoff window, re-embeds if needed, and pushes to the vector store. After 20 failed attempts (with 10-minute backoff = ~3 hours of headroom) a row is marked permanently failed.
+The reconciler is a periodic healing job that syncs Documents and Message embeddings to the external vector store on a rolling basis. It scans for `sync_state='pending'` rows past their backoff window, re-embeds if needed, and pushes to the vector store. After 20 failed attempts (with 10-minute backoff = ~3 hours of headroom) a row is marked permanently failed.
 
 ## Requirement
 
@@ -69,7 +69,9 @@ The system SHALL run a periodic reconciliation job that finds Documents and Mess
 
 ## Behaviour notes (Tier 3 — scoped to this feature)
 
+- **Read-side queries** (how documents are retrieved by the agent layer) are promoted to `features/document-query-strategies.md`. This spec covers the reconciler's **vector-sync write-back path**; that spec covers the read paths the dialectic/dreamer use.
 - **~3 hours of vector-store outage headroom before any data loss flag.** `MAX_SYNC_ATTEMPTS=20 × SYNC_BACKOFF=10min ≈ 200 minutes`. During an outage of less than this duration, all writes are recoverable. Operational implication: vector store downtime is non-fatal for short outages. See `04-assessment.md §A30`.
+- **Vector-store-only worker — Postgres is the source of truth.**
 - **"Heals missed writes" framing is precise.** The reconciler is not a generator or a refresher; it specifically targets the gap between Postgres durability and vector-store eventual consistency.
 - **Soft-delete → vector cleanup → hard-delete sequence.** Deduplication rejects (soft-delete; see `features/consolidation.md`) flow through the reconciler for vector cleanup before the row is physically removed. Single subsystem owns vector-store hygiene.
 - **Time budget (4 minutes per cycle) leaves operational headroom.** Designed to share its scheduler slot with the dreamer and deriver (all three are orchestrated by `queue_manager.py`). Not greedy.

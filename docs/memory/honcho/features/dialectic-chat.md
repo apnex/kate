@@ -6,9 +6,7 @@
 
 ## What it is
 
-Dialectic chat is Honcho's query-time retrieval surface. Given a query about an observed peer from an observer peer's perspective, the system synthesises an answer by spinning up a `DialecticAgent` that iteratively gathers context via tools and produces a response. The agent runs as an LLM-driven tool loop: at each turn it can call read tools (search memory, fetch recent history, load observation context) or write tools (create observations, update peer card), then synthesise a final answer. The agent runs without holding a database connection — DB usage is preflight-only for validation, configuration, and peer-card loading.
-
-A non-agentic variant ("standard dialectic" — pre-gather all context before a single LLM call) is referenced in the agent's docstring but the agentic variant is the production entry point exposed by `chat.py`.
+Dialectic chat is Honcho's query-time retrieval surface. Given a query about an observed peer from an observer peer's perspective, the system synthesises an answer by spinning up a `DialecticAgent` that iteratively gathers context via tools and produces a response. The agent runs as an LLM-driven tool loop with read and write tools, then synthesises a final answer.
 
 ## Requirement
 

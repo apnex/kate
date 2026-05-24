@@ -76,6 +76,10 @@ The system SHALL provide an asynchronous dream-cycle orchestrator that, per `(wo
 | Source | `src/dreamer/specialists.py:29` — `SPECIALISTS` list exported |
 | Spec | `features/surprisal.md` — full pipeline, seven tree backends, sampling strategies, config surface |
 
+## Scope split
+
+This spec covers the **orchestrator** — when a dream cycle fires, which specialists run, what the `DreamResult` carries. The **specialist contract** (`BaseSpecialist` ABC, the shared 350-LOC `run(...)` orchestration, per-specialist policy like `can_update_peer_card`, telemetry rollups, hints-as-non-binding-bias) is promoted to `features/specialist-contract.md`. **Surprisal** is at `features/surprisal.md`.
+
 ## Behaviour notes (Tier 3 — scoped to this feature)
 
 - **Surprisal is a separable mechanism.** Promoted to its own spec at `features/surprisal.md`. The dreamer-level claim is only that surprisal can pre-filter observations before specialists run; the algorithm, tree backends, sampling strategies, and config block live in the surprisal spec.

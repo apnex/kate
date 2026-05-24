@@ -1,14 +1,14 @@
 # Honcho — Scope Coverage
 
 **Substrate:** honcho v3.0.7 (SHA `7470866`)
-**Probe date:** 2026-05-24
-**Methodology:** `research/nanoprobe` "Option C" three-pass discovery
+**Probe date:** 2026-05-24 (initial probe) → 2026-05-24 (retro-audit pass D.1-D.4)
+**Methodology:** `research/nanoprobe` five-pass meta-process (formalised post-probe in D.4)
 
 This document reconciles **planned scope** (the initial feature hypothesis) with **actual scope** (what got specced) and **deferred scope** (what was deliberately left out). It is the audit trail for the probe's coverage decisions.
 
 ---
 
-## 1. Specs delivered (18)
+## 1. Specs delivered (21)
 
 ### Foundations (5)
 1. `features/observer-observed.md` — perspectival peer-pair as storage key
@@ -17,24 +17,27 @@ This document reconciles **planned scope** (the initial feature hypothesis) with
 4. `features/token-batching.md` — token-threshold batching at the deriver
 5. `features/explicit-deductive.md` — three-level observation hierarchy + `source_ids`
 
-### Retrieval (3)
+### Retrieval (4)
 6. `features/dialectic-chat.md` — inline agentic chat with write tools
-7. `features/search-tools.md` — semantic + keyword search tool surface
+7. `features/search-tools.md` — semantic + keyword search tool catalogue
 8. `features/pluggable-vector-backend.md` — pgvector / LanceDB / Turbopuffer
+9. `features/document-query-strategies.md` — four retrieval shapes (semantic, recent, most-derived, filter-only) **(promoted in retro-audit D.1)**
 
-### Async / cognition (5)
-9. `features/dreamer.md` — async dream-cycle orchestrator + specialists
-10. `features/reconciler.md` — async embedding sync + queue cleanup
-11. `features/peer-card.md` — JSONB-on-`Peer` curated profile
-12. `features/consolidation.md` — hybrid cosine + token-set dedup
-13. `features/summarizer.md` — session-level summarisation
+### Async / cognition (6)
+10. `features/dreamer.md` — async dream-cycle orchestrator
+11. `features/reconciler.md` — async embedding sync + queue cleanup
+12. `features/peer-card.md` — JSONB-on-`Peer` curated profile
+13. `features/consolidation.md` — hybrid cosine + token-set dedup
+14. `features/summarizer.md` — session-level summarisation
+15. `features/specialist-contract.md` — `BaseSpecialist` ABC + the dreamer's three-write-tool ABI **(promoted in retro-audit D.1)**
 
-### Infrastructure (5) — batch 4
-14. `features/hierarchical-config.md` — TOML/env/init precedence, nested settings, partial-override fix
-15. `features/worker-lease-model.md` — Postgres `ON CONFLICT DO NOTHING` leases, stale reaper
-16. `features/dream-scheduler.md` — singleton scheduler, two-layer anti-duplication, per-type fan-out
-17. `features/tool-loop.md` — iterative agentic LLM loop, cap-hit synthesis, telemetry per iteration
-18. `features/surprisal.md` — geometric surprisal sampling, 7 tree backends, 3 sampling strategies *(promoted mid-probe from sub-spec of dreamer)*
+### Infrastructure (6) — batches 4 + retro-audit
+16. `features/hierarchical-config.md` — TOML/env/init precedence, nested settings, partial-override fix
+17. `features/worker-lease-model.md` — Postgres `ON CONFLICT DO NOTHING` leases, stale reaper
+18. `features/dream-scheduler.md` — singleton scheduler, two-layer anti-duplication, per-type fan-out
+19. `features/tool-loop.md` — iterative agentic LLM loop, cap-hit synthesis, telemetry per iteration
+20. `features/surprisal.md` — geometric surprisal sampling, 7 tree backends, 3 sampling strategies *(promoted mid-probe from sub-spec of dreamer)*
+21. `features/dialectic-tool-abi.md` — dispatch contract, `ToolContext` injection, observation locking, partial-success result shape **(promoted in retro-audit D.1)**
 
 ---
 
@@ -58,9 +61,12 @@ Features that were not on the original list but emerged as substantive during re
 | Spec | When discovered | Promotion rule (research/nanoprobe §6.5) |
 |---|---|---|
 | `tool-loop.md` | Batch 4 | Shared infrastructure with non-trivial control flow (676 LOC, cap-hit synthesis, plan snapshotting) used by ≥2 subsystems. |
-| `surprisal.md` | Batch 4 closing (this probe) | Own config namespace (`SurprisalSettings`), own source file (492 LOC), non-trivial algorithm (7 tree backends + 3 sampling strategies). User-flagged after batch-4 spec write. |
+| `surprisal.md` | Batch 4 closing | Own config namespace (`SurprisalSettings`), own source file (492 LOC), non-trivial algorithm (7 tree backends + 3 sampling strategies). User-flagged after batch-4 spec write. |
+| `dialectic-tool-abi.md` | Retro-audit D.1 | Cited as Source row in `dialectic-chat.md`, `search-tools.md`, and `specialist-contract.md` but never had its own spec. Promotion-heuristic re-evaluation applied to existing citations (per skill pitfall #22) surfaced it. Meets 3 criteria: own dispatch surface, >300 LOC dedicated to ABI, non-trivial algorithm (level-policy enforcement, partial-success shape, parent_category telemetry threading). |
+| `document-query-strategies.md` | Retro-audit D.1 | Cited as Source row in `consolidation.md` and `reconciler.md`. Four semantically-distinct retrieval shapes (semantic, recent, most-derived, filter-only) with their own perspectival keying invariant. Meets 2 criteria: own algorithmic complexity, >300 LOC dedicated. |
+| `specialist-contract.md` | Retro-audit D.1 | Cited as Source row in `dreamer.md` Evidence table. `BaseSpecialist` ABC + three-tool ABI is reused by every dreamer specialist; spans deduction, induction (+ extensibility for abduction). Meets 3 criteria: own contract class, distinct from dreamer's orchestration logic, non-trivial (hints-as-non-binding-bias, per-specialist model routing, 15-iteration cap). |
 
-The surprisal promotion is the methodology's first live test of the "user-driven scope reconciliation" loop: user noticed surprisal was unspecced, agent verified scope gap, promotion criteria evaluated → promote.
+The first two promotions (tool-loop, surprisal) were caught by the in-pass scan and user-flagging. The latter three were missed by the in-pass scan but caught by the retro-audit applying the promotion heuristic to **existing Source citations**, not just to gaps. This validated skill pitfall #22 (the most dangerous gaps are the ones you've already mentioned in passing — they pass the "did I notice this?" filter but fail the "did I characterise it adequately?" filter).
 
 ---
 
@@ -94,25 +100,36 @@ A21 can be promoted to resolved in a follow-up pass; A20 and A27 are deferred to
 
 ---
 
-## 6. Methodology notes (Option C confirmation)
+## 6. Methodology notes (five-pass meta-process)
 
-This probe is the first to use the **three-pass discovery** model:
+This probe was originally executed in three passes (initial-hypothesis, reading, reconciliation). The retro-audit pass (D.1-D.4) revealed that the three-pass model under-counted the work — the actual discipline that produced this probe is **five passes**, now codified in `research/nanoprobe` §"Multi-pass meta-process":
 
-1. **Initial hypothesis pass** — list features expected from public docs + repo structure (yielded 13 candidates).
-2. **Reading pass** — execute the spec writes, discover gaps, deferrals, and promotions. Identified 4 additional features in batch 4 (hierarchical-config, worker-lease-model, dream-scheduler, tool-loop) and 1 user-flagged promotion (surprisal). Identified 4 deferred infrastructure areas.
-3. **Reconciliation pass** — this document. Reconciles planned vs. delivered vs. deferred, identifies promotion drivers, and surfaces remaining open assessments.
+1. **Sweep** — descriptive coverage in batches (the original 4 batches)
+2. **Triangulation** — evidence-table audit per spec (folded into batch writes)
+3. **Promotion audit** — apply 4-criterion heuristic to every Source citation (D.1 — caught dialectic-tool-abi, document-query-strategies, specialist-contract)
+4. **Synthesis** — apply cross-feature lenses to thin Tier 3 sections (D.3 — added cross-feature bullets to token-batching, peer-representation, minimal-deriver)
+5. **Reconciliation** — `05-coverage.md` + `00-summary.md` + `03-mapping.md` (this file)
 
-**Lesson for next probe**: the promotion criteria for §3 ("own config namespace + own source file >300 LOC + non-trivial algorithmic content") worked well. The user-driven scope check (surprisal) demonstrates the methodology is robust against agent-only blind spots; recommend baking a mid-probe "what did we miss?" prompt into `research/nanoprobe` as an explicit step.
+The original three-pass framing collapsed passes 2-4 implicitly into pass 1, which under-counts the work and misses the discipline that distinguishes a publishable probe from a draft. The five-pass model makes each frame explicit and runnable in isolation; switching frames mid-spec produces shallow output in both.
+
+Also formalised in D.4: five new lenses (lens 7-11 in `references/substrate-analysis-lenses.md`) covering locus-of-enforcement, operator-impact, failure-mode, structural-criticality, cross-feature-invariant. These were the patterns the B4 specs used but weren't codified anywhere reusable.
+
+**Lessons:**
+- Promotion criteria of "2+ of {own config namespace, own file >300 LOC, non-trivial algorithm, independently configurable}" worked well.
+- **Apply promotion criteria to existing Source citations**, not just to gaps. The D.1 retro-audit caught three promotions that the in-batch scan missed because they were already cited in parent specs.
+- **User-driven scope checks** (surprisal) are robust against agent-only blind spots; the retro-audit pattern catches the same class of miss without requiring user prompting, by forcing a re-read of the spec set against fixed criteria after writing.
+- **Tier-3-leak pass** (D.2) compressed 7 specs' "What it is" sections by removing analytical framing that belonged in Behaviour notes. This was a stability-bias failure mode: specs as written looked fine until subjected to a fresh discipline pass.
 
 ---
 
 ## 7. Closing summary
 
-- **18 features specced** (5 foundations + 3 retrieval + 5 async/cognition + 5 infrastructure).
+- **21 features specced** (5 foundations + 4 retrieval + 6 async/cognition + 6 infrastructure).
 - **4 features merged** into broader specs to avoid over-decomposition.
-- **2 features promoted** mid-probe based on substrate evidence (tool-loop, surprisal).
+- **5 features promoted** based on substrate evidence (tool-loop, surprisal, dialectic-tool-abi, document-query-strategies, specialist-contract — last three from D.1 retro-audit).
 - **8 areas deferred** as out-of-scope (generic infrastructure or operator concerns).
 - **3 assessments remain open** (A20, A27, partial A21).
 - **31 Tier-3 findings** logged in `04-assessment.md`, with in-place strike-through revisions tracking evolution.
+- **Methodology evolved mid-probe**: three-pass → five-pass model formalised in `research/nanoprobe` skill (D.4); 5 new cross-feature lenses (7-11) codified.
 
 The substrate is specced to a depth sufficient for the kate memory-system design work (per `03-mapping.md`). Cross-substrate comparative analysis is the next pass and explicitly out of scope for this probe.

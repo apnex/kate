@@ -6,7 +6,7 @@
 
 ## What it is
 
-The summarizer produces and serves message summaries for session context APIs. Summaries are stored in session metadata as typed objects (`Summary` TypedDict with `content`, `message_id`, `summary_type`, `created_at`, `token_count`, `message_public_id`). Two summary types exist (`short` and `long`, exposed via the `SummaryType` enum). The summarizer is invoked when callers request session context via `get_session_context` or related public functions. Despite its large LOC count (957 lines, the biggest single file outside agent_tools.py and queue_manager.py), it is structured as a utility — no top-level `src/summarizer/` directory.
+The summarizer produces and serves message summaries for session context APIs. Summaries are stored in session metadata as typed objects (`Summary` TypedDict with `content`, `message_id`, `summary_type`, `created_at`, `token_count`, `message_public_id`). Two summary types exist (`short` and `long`, exposed via the `SummaryType` enum). The summarizer is invoked when callers request session context via `get_session_context` or related public functions.
 
 ## Requirement
 

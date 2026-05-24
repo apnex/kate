@@ -1,10 +1,10 @@
 # Honcho — Probe Summary
 
 **Substrate:** honcho v3.0.7 (SHA `7470866`)
-**Probe date:** 2026-05-24
+**Probe date:** 2026-05-24 (initial) → 2026-05-24 (retro-audit D.1-D.4)
 **Prober:** apnex + hermes
-**Methodology:** `research/nanoprobe` (three-pass discovery, tier-separated, substrate-native vocabulary)
-**Companion artefacts:** `02-architecture.md` (Tier 1+2 map), `04-assessment.md` (Tier 3 findings), `features/*.md` (18 specs), `03-mapping.md` (goals), `05-coverage.md` (scope reconciliation)
+**Methodology:** `research/nanoprobe` (five-pass meta-process: sweep, triangulation, promotion audit, synthesis, reconciliation — formalised post-probe in D.4)
+**Companion artefacts:** `02-architecture.md` (Tier 1+2 map), `04-assessment.md` (Tier 3 findings), `features/*.md` (21 specs), `03-mapping.md` (goals), `05-coverage.md` (scope reconciliation)
 
 ---
 
@@ -58,7 +58,7 @@ LLM backend, embedding backend, vector store (pgvector | LanceDB | Turbopuffer),
 ## Reading order
 
 1. `02-architecture.md` — runtime topology, subsystems, primitives, config, storage, pluggable surfaces.
-2. `features/*.md` — 18 specs grouped by layer (foundations, retrieval, async/cognition, infra). See `05-coverage.md` for the index.
+2. `features/*.md` — 21 specs grouped by layer (foundations 5, retrieval 4, async/cognition 6, infra 6). See `05-coverage.md` for the index.
 3. `04-assessment.md` — Tier 3 analytical findings (A1–A31), evolution log via in-place strike-throughs.
 4. `03-mapping.md` — substrate fitness against G1–G9 memory-system goals.
 5. `05-coverage.md` — what was specced, what was deferred, what was promoted mid-probe.

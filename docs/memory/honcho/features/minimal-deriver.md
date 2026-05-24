@@ -57,6 +57,7 @@ The system SHALL, per enqueued batch of messages, invoke one configured LLM with
 
 ## Behaviour notes (Tier 3 — scoped to this feature)
 
+- **Deriver is the only "cheap" writer in the three-writer architecture.** Token-batched (`features/token-batching.md`), reasoning-disabled-short-circuit guarded, single-LLM-call. The dreamer (`features/dreamer.md`) does the expensive iterative work; the dialectic (`features/dialectic-chat.md`) does the query-time work. The deriver's job is to be the fast path. Operational implication: cost-tuning starts with `DERIVER.MODEL_CONFIG` (cheap), not `DREAM.*_MODEL_CONFIG` (smart).
 - **Claim/source mismatch.** Docs frame the deriver as producing both explicit and deductive observations. Source produces only explicit. The `DeductiveObservation` schema exists and is read at `deriver.py:233`, but the production prompt never asks for deductive output. See `04-assessment.md §A8` for the load-bearing finding and cross-cutting implications.
 - **"Single LLM call" is genuinely single.** No loop, no retry-with-different-prompt, no tool-augmented refinement. Three internal retry attempts on transient failure (`enable_retry=True, retry_attempts=3`), but logically one extraction call.
 - **Custom-model claim is configuration-time, not architectural.** The deriver uses `settings.DERIVER.MODEL_CONFIG`, a generic per-call model setting. Custom models (e.g. Neuromancer XR) are an available choice, not a wired-in dependency.

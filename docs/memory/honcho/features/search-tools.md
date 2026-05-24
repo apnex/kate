@@ -6,7 +6,7 @@
 
 ## What it is
 
-Search tools is the catalogue of LLM-callable tools exposed to the `DialecticAgent` during query answering. The catalogue ships as two declared tool sets — `DIALECTIC_TOOLS` (full surface) and `DIALECTIC_TOOLS_MINIMAL` (strict subset) — defined as JSON-schema tool descriptors and bound to handler functions via a dispatch table. The surface mixes **read tools** (semantic search, recent history, observation context, preference extraction) with **write tools** (create observations at three reasoning levels, update peer card). The agent can therefore mutate memory state during a query — not just retrieve from it.
+Search tools is the catalogue of LLM-callable tools exposed to the `DialecticAgent` during query answering. The catalogue ships as two declared tool sets — `DIALECTIC_TOOLS` (full surface) and `DIALECTIC_TOOLS_MINIMAL` (strict subset) — defined as JSON-schema tool descriptors and bound to handler functions via a dispatch table. The surface mixes **read tools** (semantic search, recent history, observation context, preference extraction) with **write tools** (create observations at three reasoning levels, update peer card).
 
 ## Requirement
 
@@ -65,6 +65,10 @@ The system SHALL expose to the dialectic agent a catalogue of tools for retrievi
 | Source | `src/utils/agent_tools.py:1442-1604` — `_handle_update_peer_card` write path with validation |
 | Source | `src/utils/agent_tools.py:347-388` — `_truncate_tool_output` and `_maybe_truncated_result` truncation guards |
 | Source | `src/utils/agent_tools.py:299-329` — `get_observation_lock` for write contention control |
+
+## Scope split
+
+This spec covers the **catalogue** — which tools exist, what each does, and the read/write split. The tool **ABI** (dispatch contract, `ToolContext` injection, observation locking, output truncation, level-policy enforcement, partial-success result shapes) is promoted to `features/dialectic-tool-abi.md`.
 
 ## Behaviour notes (Tier 3 — scoped to this feature)
 
