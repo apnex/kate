@@ -25,13 +25,13 @@ kate/
 ├── README.md                          ← you are here
 ├── docs/
 │   ├── 00-architecture-overview.md    ← the layer-cake + topology
-│   ├── memory/                        ← memory-system architecture
-│   │   ├── 00-goals.md                  what good looks like
+│   ├── memory/                        ← memory-system research + planning
+│   │   ├── 00-goals.md                  what good looks like + folder charter
 │   │   ├── 01-research-brief.md         subagent investigation brief
 │   │   ├── 02-research-findings.md      subagent report + synthesis
 │   │   ├── 03-design-decisions.md       ADR-style choices
 │   │   ├── 04-implementation-plan.md    phased rollout
-│   │   └── 05-changelog.md              post-implementation log
+│   │   └── substrate-landscape.md       reference: alternatives survey
 │   ├── operations/                    ← runbooks
 │   │   ├── boot-sequence.md             linger, initContainers, why
 │   │   ├── litellm-routing.md           models, fallbacks, TF location
@@ -48,8 +48,8 @@ kate/
 - Markdown only — keep it readable on github.com directly.
 - Each `decisions/` file follows lightweight ADR: Context, Decision,
   Consequences, Status, Date.
-- The `memory/` series is numbered intentionally — read in order.
-- Changelog entries append-only; never rewrite history.
+- The numbered `memory/` files (00–04) are a one-time design arc — read in order.
+  Unnumbered files in the same folder are standalone reference docs.
 
 ## Cross-references
 

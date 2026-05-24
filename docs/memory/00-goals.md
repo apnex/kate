@@ -4,6 +4,32 @@
 **Date:** 2026-05-24
 **Author:** apnex + hermes
 
+## About this folder
+
+`docs/memory/` is a **research and planning archive** for the memory-system
+architecture of this Hermes deployment. It is:
+
+- A one-time design arc — goals (`00`), research brief (`01`), findings (`02`),
+  decisions (`03`), implementation plan (`04`).
+- Plus standalone reference docs added as needed (substrate surveys,
+  benchmarks, glossaries, etc.) — no numbering required; descriptive
+  filenames are enough.
+
+It is **not**:
+
+- A changelog. Living state of the memory system is reflected in the
+  `hermes`/`honcho` repos (manifests, config templates) and in runtime
+  Honcho conclusions. This folder captures *thinking*, not *state*.
+- Runtime memory storage. Actual memory lives in Honcho's Postgres, in
+  `MEMORY.md`/`USER.md` inside the hermes pod, and in the skill library.
+- A diary of every tweak. Small operational adjustments belong in commit
+  messages on `hermes`/`honcho`; only design-level shifts warrant a new
+  doc here.
+
+If you're adding a doc and find yourself reaching for the next number,
+ask first: is this part of the design arc, or is it reference material?
+Reference material doesn't need a number.
+
 ## Purpose
 
 Define what "effective and efficient memory" means for this Hermes deployment
@@ -135,4 +161,3 @@ This goals doc is "done" when:
 - Design decisions are recorded in `docs/decisions/`
 - Implementation plan is executed
 - All A1–A7 criteria are met for at least 2 consecutive sessions
-- Changelog has at least one post-implementation tuning entry
