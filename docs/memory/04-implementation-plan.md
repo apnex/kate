@@ -219,3 +219,70 @@ With ~1,187 obs queued, the first dream cycle will fire within ~60 min of idle-w
 - Mark this DEFERRED-04 block as ✓ DONE in this file.
 - File a Honcho conclusion via honcho_conclude documenting the change.
 
+
+
+---
+
+## DEFERRED-04 Status (2026-05-24 22:45 UTC) — 🚧 BLOCKED at Phase 4
+
+**Deployment shipped successfully** (commits `158ead1`, `f5ef1c4` on apnex/honcho main; ArgoCD synced clean). All 6 specialist env vars live in the running deriver container. `settings.DREAM.ENABLED == True` confirmed inside the pod.
+
+**However:** the live deriver flow never invokes `check_and_schedule_dream`, so no dream tasks are ever enqueued and no deductive/inductive observations form.
+
+### Reproduction confirms the scheduler works in isolation
+Manual probe inside the deriver pod (`/tmp/dream_probe.py`):
+```python
+async with db: coll = await db.scalar(select(Collection).where(...))
+await check_and_schedule_dream(db, coll)   # → returns True, logs "Dream check" + "Scheduled dream"
+```
+Output (DEBUG logging):
+```
+2026-05-24 22:38:48,189 src.dreamer.dream_scheduler DEBUG Dream check
+2026-05-24 22:38:48,191 src.dreamer.dream_scheduler DEBUG Scheduled dream
+check_and_schedule_dream returned: True
+2026-05-24 22:38:48,191 src.dreamer.dream_scheduler DEBUG Dream task cancelled
+```
+(The trailing "cancelled" is expected — the probe process exited and the in-memory timer was destroyed.)
+
+### Gate analysis (all gates resolve to True at runtime)
+| Gate | Location | Live value |
+|---|---|---|
+| `settings.DREAM.ENABLED` | `src/config.py` | `True` ✓ |
+| `message_level_configuration.dream.enabled` | `src/crud/representation.py:203` | resolves to `True` per `get_configuration(None, sess, ws)` repro ✓ |
+| Document threshold (≥50 since last dream) | `dream_scheduler.py:305` | 1,247 since 0 ✓ |
+| `MIN_HOURS_BETWEEN_DREAMS` | `dream_scheduler.py:321` | no prior dream → bypassed ✓ |
+| `dream_scheduler = get_dream_scheduler()` singleton | `dream_scheduler.py:367` | constructible OK ✓ |
+
+### Diagnostic evidence
+Searching 15 min of DEBUG-level deriver logs with `grep -iE "dream|representation|threshold"` returns **6 lines** — all from `src.deriver.queue_manager`. **Zero** lines from `src.dreamer.dream_scheduler` or `src.crud.representation`, despite:
+- 8 new `explicit` documents landing in Postgres in that window (so `save_representation` MUST have run)
+- The gate at `representation.py:203` definitely being open
+- DEBUG-level logging definitely working (`queue_manager` DEBUG lines DO surface)
+- No `logger.warning("Failed to check dream scheduling")` either, which would fire if `check_and_schedule_dream` raised
+
+### Hypotheses to test next session (in priority order)
+1. **Logger filter / handler scoping for `src.dreamer.*` and `src.crud.*` modules.** Most likely culprit given the symmetric absence across both modules at the same DEBUG-effective level. Worth dumping `logging.getLogger("src.crud.representation").handlers` from inside a running worker (not a fresh subprocess).
+2. **Conditional import or feature-flag short-circuit** somewhere between `deriver.py:211 save_representation()` and `representation.py:_save_representation_internal()` — maybe a v3.0.7 wrapper that bypasses dream scheduling when running in "minimal_deriver" mode (note the metric label `minimal_deriver_430_apnex`).
+3. **Async-context issue:** `tracked_db("representation_manager.save_representation")` opens a NEW db session at `representation.py:125`; the inner `_save_representation_internal` receives a fresh `db`. The collection object came from the OUTER session. The gate evaluation happens before any db call, so this is unlikely to be the cause — but worth checking.
+4. **Separate downstream bug (confirmed):** `settings.DREAM.DEDUCTION_MODEL_CONFIG.MODEL` raises `AttributeError: 'ConfiguredModelSettings' object has no attribute 'MODEL'`. The nested env-var convention `DREAM_DEDUCTION_MODEL_CONFIG__MODEL` does not appear to populate the pydantic schema correctly. Even once we unblock the scheduler invocation, specialists will likely fall back to upstream defaults (OpenAI public API w/ `gpt-5.4-mini`). Fix this BEFORE re-enabling for traffic.
+
+### Recommended next session entry point
+Spawn the **nanoprobe** skill for L3 archaeology on the v3.0.7 `deriver.py:211 → representation.py:125 → representation.py:_save_representation_internal → representation.py:204` call path. Specifically investigate (a) whether `save_representation` has alternative code paths in v3.0.7 that skip the dream block, and (b) why module loggers `src.crud.representation` and `src.dreamer.*` produce zero output at DEBUG despite root logger being DEBUG.
+
+### Current cluster state (clean)
+- `DREAM_ENABLED: "true"` ✓
+- `DREAM_DEDUCTION_MODEL_CONFIG__*` env vars present ✓
+- `DREAM_INDUCTION_MODEL_CONFIG__*` env vars present ✓
+- `DREAM_IDLE_TIMEOUT_MINUTES` reverted to upstream default (60 min) ✓
+- `LOG_LEVEL` reverted to upstream default on deriver ✓
+- Honcho otherwise fully healthy (deriver processing batches, observations landing, dialectic queries working)
+
+### Open commits
+| SHA | Repo | Description |
+|---|---|---|
+| `158ead1` | apnex/honcho | Enable Dreamer, wire specialists to LiteLLM proxy |
+| `d931546` | apnex/honcho | TEMPORARY IDLE_TIMEOUT=1 (reverted in f5ef1c4) |
+| `f5ef1c4` | apnex/honcho | Revert TEMPORARY IDLE_TIMEOUT_MINUTES override |
+
+### No skill update yet
+Will update `honcho-self-host-k3s` SKILL.md with the dreamer pitfall AFTER the call-path bug is resolved — pre-writing the skill now would be premature since we may discover the pitfall is actually different from what we currently believe.
