@@ -286,3 +286,46 @@ Spawn the **nanoprobe** skill for L3 archaeology on the v3.0.7 `deriver.py:211 �
 
 ### No skill update yet
 Will update `honcho-self-host-k3s` SKILL.md with the dreamer pitfall AFTER the call-path bug is resolved — pre-writing the skill now would be premature since we may discover the pitfall is actually different from what we currently believe.
+
+
+---
+
+## DEFERRED-04 Status (2026-05-25 23:30 UTC) — ✅ DONE
+
+**Root cause (confirmed via parallel L3 code-archaeology probes):**
+The `dream.enabled` gate at `src/crud/representation.py:202` evaluates a `ResolvedConfiguration` that is **snapshotted in the API/webserver pod at message-enqueue time** (`src/deriver/enqueue.py:111,122`), serialized into the `queue.payload.configuration` JSONB column, and deserialized verbatim by the deriver (`src/deriver/queue_manager.py:103`). The deriver pod's own `settings.DREAM.ENABLED` only matters in a "very rare edge case" (`deriver.py:73`). On 2026-05-24 the ConfigMap was patched at 22:50:27Z, the deriver Deployment was rolled (correctly picking up `DREAM_ENABLED=true`), but the API Deployment (started ~22:1X, 73m old) was NOT rolled — and `envFrom: configMapRef` does not hot-reload. So every queued representation work-unit serialized `{"dream": {"enabled": false}}` from the stale API-pod env, and the gate fell through the silent-False branch (no `else`, no log, no warning).
+
+**Fix applied:** `kubectl -n honcho rollout restart deploy/honcho` — restarted the API pod so its `envFrom` re-read the (already-correct) ConfigMap. No code changes, no manifest changes needed.
+
+**Verification (2026-05-24 23:24-23:26 UTC):**
+- API pod env now: `DREAM_ENABLED=true` ✓
+- Fresh queue row 665: `payload.configuration.dream → {"enabled": true}` ✓
+- Queue row 669: `task_type='dream'` enqueued ✓ (first dream task in cluster history)
+- Deriver log: `Executed dream for dream:omni:hermes:apnex:apnex` ✓
+- Deduction specialist: 14 tool calls, 98620 in / 4085 out tokens, 70s → **6 deductive observations created** ✓ (was 0)
+- Deduction also: deleted 22 noisy observations + updated peer card ✓
+- Induction specialist: in flight at last check, making `search_memory` and `search_messages` tool calls
+- `documents.level` now: `explicit=1248, deductive=6` (was: only explicit)
+
+**Secondary finding (Probe B, false-alarm refutation):**
+Phase-4's secondary concern that `DREAM_DEDUCTION_MODEL_CONFIG__MODEL` env-var naming was broken was a self-inflicted diagnostic-script bug, NOT a real issue. The naming convention loads correctly at v3.0.7 (verified by minimal pydantic-settings 2.14.1 repro). Two bugs in my Phase-4 debug script created the false alarm: (a) accessed `.MODEL` uppercase but the pydantic field is `.model` lowercase, (b) filtered `'CONFIG' not in k.upper()` in `model_dump()` output, which explicitly excluded the very keys I was looking for. No ConfigMap change needed.
+
+**Skill updates landed (`honcho-self-host-k3s`):**
+- Pitfall #16 rewritten: replaced "root cause unknown" speculation with the confirmed API-pod-snapshot-at-enqueue mechanism + the rollout-both-deployments rule + the hardening recommendation (checksum-annotation or kustomize-hashed ConfigMap)
+- Pitfall #18 corrected: removed the misleading "logger handler scoping" hypothesis as the primary explanation; reframed as second-order check after upstream-gate audit
+- Both patches applied via `skill_manage(action='patch')` — clean diffs, no other content disturbed
+
+**Hardening deferred (not blocking):**
+Add `checksum/honcho-config` pod-template annotation OR kustomize `configMapGenerator` with hashed names so future ConfigMap edits auto-trigger rollouts on both Deployments. Without this, the next DREAM/SUMMARY/DERIVER flag flip in ConfigMap will silently land in one Deployment but not the other and reproduce the exact same silent gate-skip. Filed as a separate follow-up.
+
+**Operational state restored:**
+- `DREAM_IDLE_TIMEOUT_MINUTES` set back to upstream default (60 minutes) — was temporarily 1 minute for fast verification
+- `LOG_LEVEL=DEBUG` reverted to upstream default (INFO)
+- All other config preserved
+
+**Commits:**
+- `apnex/honcho@158ead1` — original 6-env-var specialist ConfigMap patch (still correct)
+- `apnex/honcho@f5ef1c4` — IDLE_TIMEOUT temporary tweak revert (already landed previously)
+- API pod restart was operator action (no commit; ConfigMap was already correct in git)
+
+**Time-to-resolve:** ~25 minutes of L3 investigation + ~5 minutes of operator action. Compared to my Phase-4 attempt (60+ minutes of chasing code-archaeology hypotheses), the targeted parallel-probe approach with the nanoprobe discipline (claim/doc/source triangulation, pinned SHA, file:line evidence, hypothesis-by-hypothesis verdicts) reduced wall-time by ~3x AND produced two reusable skill updates as a side effect.
