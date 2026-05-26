@@ -1,0 +1,117 @@
+# Platform Migration — Design Journal
+
+**Append-only.** New entries at the bottom. Use strike-through for
+corrections; do not delete or edit prior entries.
+
+Entry format:
+- Date + number
+- Topic
+- What happened / decided
+- Why
+- Consequences / next actions
+
+---
+
+## Entry 001 — 2026-05-26 — Kate architecture stabilised (Phase 1 complete)
+
+**What:** After a multi-iteration design conversation, kate's architecture
+landed in `apnex/kate` at commit `10670fc` (atop `a1239b2`).
+
+**Why:** Multiple refinements of the substrate/composition/component
+boundary during the conversation:
+
+1. Started with hand-rolled ArgoCD Application files per workload
+2. Discovered labops's existing ApplicationSet+registry pattern in
+   `labops/argo/services.appset.yaml` + `services.yaml`
+3. Adopted the same pattern in kate (mirror, not invent)
+4. Refined boundary: components own full deployment surface including
+   exposure (vip.yaml moves into hermes/honcho repos)
+5. Sharper refinement: substrate-awareness lives only in substrate;
+   components ship substrate-agnostic manifests; substrate decorates
+   via cluster-wide Kyverno policies at admission
+
+Final commits to kate:
+- `a1239b2` — `refactor(bundles): adopt ApplicationSet+registry pattern`
+- `10670fc` — `docs: capture multi-phase platform architecture + migration plan`
+
+**Consequences:** Kate is structurally correct but NOT yet installable.
+Labops's registry still owns hermes/honcho. Cutover (Phase 4) requires
+coordinated multi-repo changes plus risk mitigation work.
+
+---
+
+## Entry 002 — 2026-05-26 — Production cutover risks identified
+
+**What:** During the "ready to execute?" reality check, four risks
+surfaced that span beyond the architectural cutover:
+
+1. **Hermes session state** — transcripts, skills, memory, configuration
+2. **Honcho state** — Postgres database with months of memory
+3. **Custom container image** — modifications to plugins + audio of
+   unclear provenance; current pod runs a custom-built image
+4. **Live integrations** — Discord connectivity, channel mappings,
+   reconnection behaviour
+
+**Why this matters:** The kate cutover was originally drafted as a
+self-contained architectural operation. These risks are not unique to
+cutover — they're standing operational concerns of running Hermes/Honcho
+on k8s — but cutover forces them into focus. None is intrinsically
+hard; all need explicit handling before Phase 4.
+
+**Decisions:**
+
+- Insert pre-cutover due diligence phases: 3a (backup discipline),
+  3b (custom image audit), 3c (live integration verification)
+- These can run in parallel; all gate Phase 4
+- Sequence approved by user, ranked by importance: D/3b first (biggest
+  unknown), C/3a second (should exist anyway), A/2 third, B/3 fourth,
+  E/3c fifth, F sixth, G/4 last
+
+**Consequences:** Phase 4 timeline extends; safety improves
+significantly. The forced operational hygiene is positive even
+independent of cutover success.
+
+---
+
+## Entry 003 — 2026-05-26 — Kyverno install path: shell-script bootstrap (NOT ArgoCD)
+
+**What:** During Phase 2 design, originally proposed Kyverno as an
+ArgoCD-managed Application via the labops registry. User pushed back:
+MetalLB is the precedent — it MUST be shell-bootstrapped because
+ArgoCD itself requires MetalLB. Kyverno should follow the same model
+for consistency.
+
+**Why:** Substrate layer is shell-imperative; kate layer is
+ArgoCD-declarative. Sharper boundary.
+
+**Decision:** Kyverno installs via `labops/kyverno/install` +
+`labops/kyverno/prepare` shell scripts, integrated into `k3s/up` chain:
+`k3s/install → metallb/install → metallb/prepare → kyverno/install →
+kyverno/prepare → argo/install`.
+
+**Consequences:**
+
+- labops's `argo/services.yaml` registry may be **empty or near-empty**
+  after Phase 4 cutover. The ArgoCD registry mechanism lives in labops,
+  but every entry in it belongs to kate. This is the correct boundary.
+- Phase 2 plan in `architecture.md` updated to reflect this.
+
+---
+
+## Entry 004 — 2026-05-26 — Session halt; resumption documentation in place
+
+**What:** Session ends here. Created `docs/research/platform-migration/`
+folder with canonical 4-file layout and `docs/SESSION-RESUME.md` top-level
+pointer.
+
+**Why:** Each phase from here onwards (D/3b first) is substantial enough
+to deserve a dedicated session. Resumption needs to be friction-free.
+
+**Consequences:** Next session can pick up cold by:
+1. Reading `kate/docs/SESSION-RESUME.md` (the "where am I")
+2. Reading `kate/docs/research/platform-migration/05-open-questions.md`
+   (the "what's actively in flight")
+3. Reading the relevant phase section in `kate/docs/architecture.md`
+   for full context
+
+Phase D (custom image audit) is the next planned work.

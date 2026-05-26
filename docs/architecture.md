@@ -184,46 +184,57 @@ today would create duplicate Applications and conflict with labops.
 with MetalLB annotations at admission time, so components can ship
 substrate-agnostic vip.yaml manifests.
 
-**Open design question (resolve at start of Phase 2):**
+**Design decision (resolved 2026-05-26): shell-script bootstrap pattern.**
 
-Does Kyverno install via the **shell-script bootstrap pattern** (matches
-labops/metallb/install) or via the **ArgoCD registry** (matches
-labops/argo/services.yaml entries)?
+Kyverno installs via shell scripts in `labops/kyverno/` (mirroring
+`labops/metallb/`), NOT via the ArgoCD registry. Reasoning:
 
-Arguments for shell-install:
-- Matches the existing MetalLB pattern (substrate bootstrap = shell)
-- No bootstrap circularity (Kyverno doesn't depend on ArgoCD being
-  healthy to install)
-- Substrate stays minimal in the registry
-
-Arguments for ArgoCD-managed:
-- Drift detection, version pinning, declarative upgrades
-- Treats Kyverno like any other reconciled component
-- Aligns with the trajectory of "everything substrate-level is also
-  GitOps-managed"
-
-**Recommendation:** ArgoCD-managed via registry. Substrate is mature
-enough that drift detection on Kyverno is more valuable than the
-shell-script's bootstrap-time simplicity. Document the choice
-explicitly when made.
+- **MetalLB precedent:** MetalLB is the existing model — it MUST be
+  shell-bootstrapped because ArgoCD itself requires MetalLB (for
+  argocd-server LoadBalancer access). Kyverno follows the same model
+  for consistency, even though it doesn't have the same hard bootstrap
+  dependency.
+- **Substrate layer is shell-imperative; kate layer is ArgoCD-declarative.**
+  This sharpens the substrate/composition boundary: everything before
+  ArgoCD is shell, everything via ArgoCD is kate's territory.
+- **Bootstrap ordering becomes rigid and explicit:**
+  `k3s/install → metallb/install → metallb/prepare → kyverno/install →
+  kyverno/prepare → argo/install`.
+- **Consequence:** After Phase 4 cutover, labops's `argo/services.yaml`
+  registry may be **empty or near-empty**. The ArgoCD registry mechanism
+  lives in labops, but every entry in it belongs to kate. This is
+  the correct boundary — labops owns the mechanism, kate owns the
+  contents.
 
 **Changes in `apnex/labops`:**
 
-Add to `argo/services.yaml`:
-```yaml
-- name: kyverno
-  type: helm
-  repoURL: https://kyverno.github.io/kyverno/
-  chart: kyverno
-  revision: 3.2.6                    # pin a tested version
-  namespace: kyverno
+Create `labops/kyverno/install` (shell, idempotent kubectl apply of
+Kyverno upstream manifests — likely the helm-templated install YAML
+or the official `install.yaml` from the Kyverno releases page; pin
+the version):
 
-- name: kyverno-policies-labops
-  type: git
-  repoURL: https://github.com/apnex/labops
-  gitPath: kyverno
-  revision: master
-  namespace: kyverno
+```bash
+#!/bin/bash
+## module: kyverno/install
+## purpose: install Kyverno policy engine for substrate-level admission policies
+## inputs:  KUBECONFIG, KYVERNO_VERSION (optional pin override)
+## needs:   healthcheck/k8s-local
+
+KYVERNO_VERSION="${KYVERNO_VERSION:-v1.13.4}"  # pin a tested version
+kubectl apply -f "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/install.yaml"
+```
+
+Create `labops/kyverno/prepare` (shell, applies the default-pool
+ClusterPolicy after Kyverno is healthy):
+
+```bash
+#!/bin/bash
+## module: kyverno/prepare
+## purpose: apply Kyverno ClusterPolicies for substrate defaults
+## needs:   healthcheck/k8s-deployment-ready (kyverno-admission-controller)
+
+run healthcheck/k8s-deployment-ready kyverno-admission-controller kyverno
+kubectl apply -f "${LABOPS_ROOT}/kyverno/policy-default-metallb-pool.yaml"
 ```
 
 Create `labops/kyverno/policy-default-metallb-pool.yaml`:
@@ -380,6 +391,167 @@ fact that Deployments are independent of their Application wrappers.
 
 ---
 
+## Production cutover risks (added 2026-05-26)
+
+Phase 4 was originally drafted as a self-contained architectural
+operation. Reality check identified four operational risks that span
+beyond the kate/labops boundary and must be addressed before cutover
+is safe. These risks are not unique to cutover — they are standing
+operational concerns of running Hermes/Honcho on k8s — but cutover
+forces them into focus.
+
+### Risk 1 — Hermes session state preservation
+
+**What's at stake:**
+- Active conversation transcripts (SQLite, likely under `/opt/data/`)
+- Skill library (loaded skills, user-created additions)
+- Memory and user profile (MEMORY.md, USER.md — durable agent notes)
+- Configuration (config.yaml, model registry, custom providers)
+- Local artifacts (cron jobs, peer card cache, audio cache)
+
+**Where it lives in the pod (to verify):**
+- `/opt/data/` — almost certainly PVC-mounted, survives pod restarts
+- `/opt/hermes/` — code, ephemeral, comes from image
+
+**Cutover survival logic:** PVCs are persistent by name+namespace.
+When the kate-owned `hermes` Application replaces the labops-owned
+one, the PVC binding is preserved because both Applications declare
+the same name. ArgoCD does NOT delete PVCs unless explicitly
+configured to (`prune: true` on PVCs is a separate concern, usually
+skipped).
+
+**Pre-cutover verification:**
+- `kubectl get pvc -n hermes` — what PVCs exist, what they're bound to
+- Read `apnex/hermes/manifests/` PVC manifest — confirm `ReclaimPolicy: Retain`
+- Read `apnex/hermes/manifests/deployment.yaml` — volumeMount paths
+
+**Backup discipline (independent of cutover):**
+- `kubectl exec hermes -- tar czf /tmp/hermes-backup.tar.gz /opt/data/`
+- `kubectl cp hermes:/tmp/hermes-backup.tar.gz <off-cluster>/`
+- Schedule (daily) + verify (test restoration)
+
+### Risk 2 — Honcho state preservation
+
+**What's at stake:**
+- Postgres database (peers, sessions, observations, dialectic
+  representations, peer cards — months of memory)
+- Vector embeddings
+- Worker queue state (transient, can be lost)
+
+**Cutover survival logic:** Same as hermes. PVC bound to Postgres pod
+survives Application ownership transfer.
+
+**Pre-cutover verification:**
+- `kubectl get pvc -n honcho` — PVC state
+- `kubectl get statefulset -n honcho` — Postgres deployment shape
+- Read `apnex/honcho/manifests/` for PVC ReclaimPolicy
+
+**Backup discipline:**
+- `kubectl exec honcho-postgres-0 -- pg_dump -U <user> <db> > honcho-$(date).sql`
+- Encrypt + push off-cluster
+- Test restoration before relying on it
+
+### Risk 3 — Custom container image
+
+**The biggest unknown.** Hermes is currently running a custom-built
+image because modifications were made to plugins and audio
+(provenance unclear). Possible outcomes after audit:
+
+| Classification | Action | Likelihood |
+|---|---|---|
+| Modifications now upstream | Switch to stock image, retire custom build | unknown |
+| Modifications unique but PR-able | Submit PRs, plan migration | unknown |
+| Modifications must remain a fork | Document fork, keep custom build, kate points at fork image | unknown |
+| Nobody remembers what or why | BLOCK cutover until audited | possible |
+
+**Audit work required:**
+1. What image is currently used? (`kubectl get pod -n hermes -o yaml | grep image:`)
+2. Where is it built? (registry, build pipeline, source repo, Dockerfile)
+3. Diff custom Dockerfile vs upstream `apnex/hermes`
+4. Diff any patched source files vs upstream
+5. Cross-check git history for the "why" of each modification
+6. Classify each modification (stock/forkable/PR-able/fork-required)
+
+**This is a separate work stream from kate architecture and must
+complete before Phase 4.**
+
+### Risk 4 — Live integrations (Discord, others)
+
+**What's at stake:**
+- Discord bot token (in `hermes-secrets`, survives via Secret)
+- Channel-to-topic mappings (location TBD — config? DB? PVC?)
+- Active webhooks
+- Voice channel connections
+- Reaction handlers, slash command registrations
+
+**Cutover survival logic:** Configuration that lives in PVC or
+Secret/ConfigMap survives by the same name+namespace logic. The
+unique concern is **reconnection** — Discord client must re-establish
+session on pod restart.
+
+**Pre-cutover verification:**
+- Where does Discord config live? Read `config.yaml`
+- Channel mappings in DB (PVC) or env (Secret)?
+- Any persistent webhook URLs registered with Discord?
+
+**Cutover-time discipline:**
+- Announce in Discord ("going down ~5min for infra cutover")
+- Execute cutover
+- Verify Discord reconnects cleanly
+- Send "back up" message as smoke test
+
+---
+
+## Revised phase model with risk-mitigation subdivisions
+
+The original 4-phase plan grows pre-cutover due-diligence phases:
+
+```
+Phase 1 — kate architecture (✓ DONE — commits a1239b2, 10670fc)
+Phase 2 — labops Kyverno (shell-script substrate, k3s/up integration)
+Phase 3 — component vip.yaml additions
+
+─── PRE-CUTOVER DUE DILIGENCE (new) ───
+Phase 3a — backup discipline established
+   - hermes PVC backup procedure (scripted, tested, off-cluster)
+   - honcho pg_dump backup procedure (scripted, tested, off-cluster)
+   - restoration tested at least once
+Phase 3b — custom image audit
+   - diff custom Dockerfile vs upstream
+   - classify each modification
+   - decide: retire / PR / keep fork
+   - if keep fork: ensure kate manifests point at fork image
+Phase 3c — live integration verification
+   - Discord state inventory (where does what live)
+   - test pod restart in current setup
+   - validates cutover won't surprise us
+
+─── CUTOVER ───
+Phase 4 — coordinated cutover (with announcement + rollback)
+```
+
+Phases 3a, 3b, 3c can run in any order and in parallel — they are
+independent risk-mitigation streams.
+
+## Approved execution sequence (2026-05-26)
+
+Ranked by **importance** (biggest unknowns first), as approved by user:
+
+| Order | Phase | Why this order |
+|---|---|---|
+| 1 | **D / 3b** — Custom image audit | Biggest unknown, biggest risk, longest lead time. If audit reveals "nobody knows why these patches exist," cutover blocks until resolved. |
+| 2 | **C / 3a** — Backup discipline | Should exist anyway; prerequisite for any risky operation. |
+| 3 | **A / 2** — labops/kyverno bootstrap | Architecturally needed; well-scoped (copy metallb/ pattern). |
+| 4 | **B / 3** — Component vip.yaml | Pure manifest writing; no live changes. |
+| 5 | **E / 3c** — Integration continuity | Final polish before cutover. |
+| 6 | **F** — Architecture doc update | Sweep all findings back into this doc. |
+| 7 | **G / 4** — Cutover | Only when all above are green. |
+
+The labels D/C/A/B/E/F/G are stable session-resumption pointers used
+in the cutover-risks research folder (see Related artifacts below).
+
+---
+
 ## Open architectural questions (to be resolved before relevant phase)
 
 ### Q1 — IP allocation strategy after cutover
@@ -423,10 +595,17 @@ different clusters from one ArgoCD instance. Out of scope for now.
 
 - `kate/bundles/README.md` — bundle authoring guide (lighter, more
   practical than this doc)
+- `kate/docs/research/platform-migration/` — research folder for the
+  cutover work; canonical 4-file layout (charter, journal, thematic
+  docs, open questions). **Read `05-open-questions.md` first when
+  resuming.**
+- `kate/docs/SESSION-RESUME.md` — top-level resumption pointer; the
+  "read this first" file when picking up cold
 - `labops/argo/services.appset.yaml` — the canonical ApplicationSet
   pattern kate mirrors
 - `labops/argo/services.yaml` — labops's current registry (will shrink
   in Phase 4 cutover)
+- `labops/metallb/` — the shell-bootstrap pattern Kyverno will mirror
 - `labops/docs/superpowers/hermes-platform-roadmap.md` — broader
   multi-session planning document (not yet read into this architecture
   doc; cross-reference when relevant)
@@ -435,6 +614,11 @@ different clusters from one ArgoCD instance. Out of scope for now.
 
 ## Change log
 
+- 2026-05-26 (rev 2) — added production cutover risks (1-4), revised
+  phase model with 3a/3b/3c subdivisions, recorded approved execution
+  sequence (D, C, A, B, E, F, G — ranked by importance), updated
+  Phase 2 to record shell-script bootstrap decision (vs ArgoCD-managed),
+  added pointers to research/platform-migration/ folder.
 - 2026-05-26 — initial draft. Phase 1 complete, Phases 2-4 planned.
   Architecture stabilised after a multi-iteration design conversation
   that refined the substrate/composition/component boundary three times
