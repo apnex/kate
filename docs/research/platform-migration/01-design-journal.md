@@ -98,6 +98,112 @@ kyverno/prepare → argo/install`.
 
 ---
 
+## Entry 008 — 2026-05-26 — Phase A CANCELLED: substrate already provides what Kyverno would have
+
+**What:** Phase A (labops Kyverno bootstrap) cancelled after live
+empirical validation revealed the design premise was wrong. The
+mechanism was meant to inject `metallb.io/ip-allocated-from-pool:
+host-pool` onto pool-agnostic component Services at admission time.
+Reality: that annotation is a MetalLB-written STATUS field, not a
+user-set request field. The actual substrate-default mechanism is
+MetalLB's `autoAssign: true` which picks the first matching pool when
+no annotation is set.
+
+**Live validation that produced the finding:**
+1. Wrote 4 production scripts (`kyverno/install|prepare|remove` +
+   `policy-default-metallb-pool.yaml`) + modified `k3s/up`
+2. Ran install — Kyverno installed cleanly, 4 deployments, 20 CRDs
+3. Ran prepare — ClusterPolicy applied, status READY, admission
+   webhook active
+4. Test: created LoadBalancer Service with no annotation → Kyverno
+   logs confirmed mutation rule fired → BUT final stored object had
+   no `metallb.io/ip-allocated-from-pool` annotation
+5. Investigated `vip-hermes` source manifest → it has NO pool
+   annotation either, only `metallb.universe.tf/allow-shared-ip:
+   host`. The live annotation is MetalLB-written status.
+6. Confirmed: `vip-vllm` uses `metallb.io/address-pool: vllm-pool`
+   (the actual REQUEST annotation), which is a different field
+   entirely.
+
+**Architectural consequences:**
+
+- Phase A drops out of the migration entirely
+- Phase B becomes a verification step ("confirm component manifests
+  are pool-agnostic" — they already are)
+- Total cutover work decreased
+- Substrate boundary is slightly less opinionated (relies on MetalLB
+  autoAssign rather than explicit policy) but substrate-portability
+  is achieved either way
+
+**What was kept:**
+
+- `apnex/labops/kyverno/` as OPTIONAL infrastructure for future use
+  cases (multi-substrate pool defaulting, validation policies,
+  sidecar injection, etc.)
+- `kyverno/README.md` documents the optional status and the Phase A
+  finding so future users know why it's not in `k3s/up`
+
+**What was removed:**
+
+- Kyverno from the cluster (via `kyverno/remove` — clean removal:
+  namespace, CRDs, all RBAC, all controllers, no residue)
+- The `kyverno/install kyverno/prepare` modules from `k3s/up`
+  MODULES array (reverted to original)
+
+**Side findings worth keeping:**
+
+1. labops scripts run on the NUC HOST, not from inside the hermes
+   pod (`jq` missing in hermes container). This is by design — labops
+   is substrate-tier; the agent talking to the substrate runs the
+   scripts via SSH (`nuc 'bash labops/...'`).
+
+2. `vip-vllm` is the canonical example of how to explicitly request a
+   pool: `metallb.io/address-pool: vllm-pool`. Other Services using
+   the default (vip-hermes, vip-honcho, vip-argocd-server) have NO
+   pool annotation in source manifests — MetalLB's autoAssign picks
+   `host-pool` because it's the first matching pool with `autoAssign:
+   true`.
+
+3. Two MetalLB IPAddressPools currently in cluster, both
+   `autoAssign: true`: `host-pool` (192.168.1.250/32) and `vllm-pool`
+   (192.168.1.251/32). If both are autoAssign and a Service doesn't
+   request either, the alphabetical first wins (`host-pool`). This is
+   stable but worth noting if a third pool is ever added.
+
+**Lessons captured in `03-phase-a-kyverno-investigation.md`:**
+
+- Validate the premise (request vs status fields) BEFORE designing
+  the mechanism
+- Distinguish status fields from spec fields, especially in
+  annotations
+- Production validation surfaces architectural errors faster than
+  design review
+- labops scripts execute on the substrate host, not from agent pods
+
+**Files committed:**
+
+- `apnex/labops` master @ c7df642:
+  - `kyverno/install`, `prepare`, `remove`, `policy-default-metallb-pool.yaml`, `README.md`
+  - `.gitignore` (excluded accidentally-committed `.claude/settings.local.json`)
+- `apnex/kate` main (this commit):
+  - `docs/research/platform-migration/03-phase-a-kyverno-investigation.md`
+  - `docs/research/platform-migration/01-design-journal.md` (entry 008)
+  - `docs/research/platform-migration/05-open-questions.md` (Q-A1..A6 resolved, phase marked cancelled)
+
+**Consequences for sequence:**
+
+| Order | Phase | Status |
+|---|---|---|
+| 1 | D — Custom image audit | ✓ DONE |
+| 2 | C — Backup discipline | ✓ DONE |
+| 3 | A — Kyverno bootstrap | ✗ CANCELLED (premise wrong) |
+| 4 | B — Component vip.yaml | NEXT (now a verification step) |
+| 5 | E — Integration continuity | |
+| 6 | F — Doc sweep | |
+| 7 | G — Cutover | |
+
+---
+
 ## Entry 007 — 2026-05-26 — PV Retain durability confirmed; cascade=orphan pattern documented
 
 **Trigger:** User question after Phase C — "Setting PVs to Retain - won't
