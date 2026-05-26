@@ -200,32 +200,38 @@ Decision: Ignore (fail-open). Correct for a home lab. Moot now.
 
 ---
 
-## Phase B / 3 — Component vip.yaml
+## Phase B / 3 — Component vip.yaml  ✓ COMPLETE 2026-05-26 (journal entry 009)
 
-### Q-B1: What's the exact set of ports each component exposes?
+**Outcome:** Completed. Reframed from "author new vip.yaml manifests"
+to "verify existing vip manifests + minor cleanup" after Phase A
+established that the existing source manifests are already
+substrate-portable. Scope ended up being annotation namespace
+migration (`metallb.universe.tf/*` → `metallb.io/*`) plus deletion of
+the abandoned `labops/stages/` directory.
 
-**Why:** vip.yaml needs accurate port definitions.
+Full investigation: `04-phase-b-vip-verification.md`.
 
-**Where to look:**
-- `kubectl get svc -n hermes vip-hermes -o yaml` — current ports
-- `kubectl get svc -n honcho vip-honcho -o yaml` — current ports
-- Cross-check with `apnex/hermes/manifests/service.yaml` (ClusterIP)
+### Q-B1: What's the exact set of ports each component exposes? — RESOLVED
 
-**Resolution:** _(unanswered)_
+| Service | Ports | Source manifest |
+|---|---|---|
+| vip-hermes | 8642 (api), 9119 (dashboard) | `apnex/labops/vip-hermes/service.yaml` |
+| vip-honcho | 8000 (http) | `apnex/honcho/manifests/honcho/vip.yaml` |
+| vip-argocd-server | 8472:8080 (https) | `apnex/labops/argo/argo.vip.yaml` |
 
-### Q-B2: Should the new Service be named `hermes-vip` (component-first)
-or `vip-hermes` (current convention)?
+All three share `192.168.1.250` via `metallb.io/allow-shared-ip: host`.
 
-**Why:** The current `vip-hermes` is labops's naming convention. If
-ownership moves to hermes, naming convention may change. Affects cutover
-(if same name → potential conflict during dual-ownership; if different
-name → must delete old Service explicitly).
+### Q-B2: Naming convention `hermes-vip` vs `vip-hermes`? — RESOLVED (keep current)
 
-**Tentative:** `hermes-vip` and `honcho-vip` — component-first naming
-matches "this is hermes's exposure". Forces explicit delete-old-create-new
-in Phase 4 (acceptable, easier to verify).
+Decision: keep `vip-*` convention. Rationale:
+- Already used consistently across all three Services
+- ArgoCD Applications and references all use `vip-*`
+- Renaming would force delete-old-create-new at cutover, increasing
+  blast radius for no semantic benefit
+- The convention reads naturally: "the VIP for hermes"
 
-**Resolution:** _(unanswered, tentative)_
+Cutover is unchanged — same name, ownership transfers via
+`--cascade=orphan` Application handoff (per design journal entry 007).
 
 ---
 

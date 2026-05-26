@@ -98,6 +98,81 @@ kyverno/prepare → argo/install`.
 
 ---
 
+## Entry 009 — 2026-05-26 — Phase B COMPLETE: annotation namespace migrated, stages/ cleanup
+
+**What:** Phase B completed. Three subsequent changes (one cleanup, two
+annotation migrations) landed across two repos with zero service
+disruption. Full details in `04-phase-b-vip-verification.md`.
+
+**Discoveries during verification:**
+
+1. **Annotation namespace drift.** All three VIP Services
+   (vip-hermes, vip-honcho, vip-argocd-server) were using the legacy
+   `metallb.universe.tf/allow-shared-ip` annotation. MetalLB v0.16.0
+   has migrated to `metallb.io/allow-shared-ip` as the canonical
+   form. Both work for backward compatibility but the canonical form
+   is the future-proof choice.
+
+2. **`labops/stages/` directory abandoned.** Single half-built
+   `stage4` experiment from early labops history, with a 1MB orphan
+   `boot.iso` and self-contained script duplicates of canonical
+   `argo/*` modules that had since drifted. Zero incoming references
+   from anywhere. Safe to delete.
+
+3. **Multiple sources for the three VIPs:**
+   - `vip-hermes` → `apnex/labops/vip-hermes/service.yaml` (ArgoCD-owned)
+   - `vip-honcho` → `apnex/honcho/manifests/honcho/vip.yaml` (child of honcho App)
+   - `vip-argocd-server` → `apnex/labops/argo/argo.vip.yaml` (no ArgoCD ownership,
+     applied via `argo/set-service` curling labops.sh)
+
+**Changes committed:**
+
+- `apnex/labops@e30bf86` — cleanup: remove abandoned stages/
+- `apnex/labops@d3494cb` — vip: migrate metallb annotations
+- `apnex/honcho@27ab82f` — vip: migrate metallb annotations
+
+**Live application sequence (zero-downtime):**
+
+1. `vip-argocd-server` via `bash argo/set-service` — IP preserved
+2. `vip-hermes` via ArgoCD sync — IP preserved
+3. `vip-honcho` via ArgoCD sync — IP preserved
+
+**Mechanism validated:** `kubectl apply`'s three-way merge handles
+annotation-key renames as a single atomic PATCH. MetalLB's watcher
+never sees an intermediate state with neither annotation; the swap
+preserves the shared IP across all sharing Services.
+
+**Smoke tests post-swap:**
+- hermes dashboard :9119 → 200 ✓
+- honcho /docs :8000 → 200 ✓
+- argocd :8472 → 200 ✓
+- All pods Running, zero restarts triggered by the sync
+- All Service endpoints correctly bound
+
+**Architectural consequence:** The substrate-portability work is now
+complete. Component manifests are pool-agnostic (per Phase A) AND on
+the canonical annotation namespace (per this entry). When the kate
+platform reorganization happens at cutover (Phase G), VIPs will move
+cleanly between ApplicationSets without manifest changes.
+
+**Side benefit from stages/ removal:** Eliminated 580KB of git
+history weight, the `argo.vip.yaml` duplicate that would have needed
+sync, and a public `labops.sh/stages/*` zombie endpoint surface.
+
+**Sequence:**
+
+| Order | Phase | Status |
+|---|---|---|
+| 1 | D — Custom image audit | ✓ DONE |
+| 2 | C — Backup discipline | ✓ DONE |
+| 3 | A — Kyverno bootstrap | ✗ CANCELLED |
+| 4 | B — Component vip.yaml + cleanup | ✓ DONE |
+| 5 | E — Integration continuity | NEXT |
+| 6 | F — Doc sweep | |
+| 7 | G — Cutover | |
+
+---
+
 ## Entry 008 — 2026-05-26 — Phase A CANCELLED: substrate already provides what Kyverno would have
 
 **What:** Phase A (labops Kyverno bootstrap) cancelled after live
