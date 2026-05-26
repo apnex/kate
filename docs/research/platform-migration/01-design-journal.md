@@ -98,6 +98,56 @@ kyverno/prepare → argo/install`.
 
 ---
 
+## Entry 007 — 2026-05-26 — PV Retain durability confirmed; cascade=orphan pattern documented
+
+**Trigger:** User question after Phase C — "Setting PVs to Retain - won't
+be overridden by Argo - because the PVCs are unchanged?"
+
+**Verified on live cluster:**
+- PVCs ARE ArgoCD-tracked (hermes-data has `tracking-id`
+  annotation; data-postgres-0 doesn't because it's STS-generated)
+- PVs are NOT ArgoCD-tracked (only `local.path.provisioner` annotations)
+- Both PVs still show `RECLAIM: Retain` — patch sticks
+- PVC manifests have no `persistentVolumeReclaimPolicy` field (PV-level
+  concept) so there's nothing for ArgoCD to "fix back to default"
+
+**Two important nuances surfaced and documented in
+`02-backup-procedures.md`:**
+
+1. **Retain = data recovery, not data continuity.** If the PVC is
+   deleted-and-recreated, the old PV becomes Released-but-orphaned;
+   new PVC gets a new empty PV. Manual rebinding required to recover.
+2. **StatefulSet PVCs are sneakier.** `data-postgres-0` is created by
+   `volumeClaimTemplates`, so ArgoCD can't accidentally prune it
+   directly. But `kubectl delete sts` with `--cascade=foreground` or a
+   separate `kubectl delete pvc` would bypass both protections.
+
+**New cutover safety invariant added to procedures doc:**
+
+> Never set `prune: true` on ArgoCD Applications that own PVCs, until
+> the PVCs themselves have been migrated to a custom StorageClass with
+> Retain default.
+
+**Phase 4 handoff pattern documented:** use
+`kubectl delete application <name> -n argocd --cascade=orphan` to
+remove the labops-owned Application without deleting any children.
+The new kate-owned Application then adopts them by name+namespace on
+next reconcile. No object is ever deleted during the handoff.
+
+**Files updated:**
+- `02-backup-procedures.md` — § "Cutover insurance" expanded to cover
+  ArgoCD tracking analysis, Retain vs continuity distinction, sync
+  discipline invariant, and the `--cascade=orphan` handoff pattern
+
+**Consequences:**
+- Phase 4 plan now has an explicit, named safety pattern
+  (`--cascade=orphan`) rather than relying on vague "be careful"
+- The "custom StorageClass with Retain default" deferred work (tracked
+  in offsite roadmap doc) gains a second motivation: it makes future
+  cutovers safer-by-default, not just current-PV-safer
+
+---
+
 ## Entry 006 — 2026-05-26 — Phase C resolved: backups working, PVs patched
 
 **What:** Six Q-C questions answered. Two PVs (hermes-data,

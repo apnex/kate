@@ -38,14 +38,66 @@ kubectl patch pv pvc-d7844fdd-1276-4195-b384-e3bf39c27625 \
   -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
 ```
 
-This means: even if ArgoCD mistakenly prunes the PVC during cutover,
-the underlying PV (and the data on it at
-`/var/lib/rancher/k3s/storage/`) survives and can be manually re-bound.
+### Will ArgoCD revert the patch?
+
+**No.** Verified 2026-05-26 by inspecting live annotations:
+
+| Object | ArgoCD tracking? | Why |
+|---|---|---|
+| `hermes/hermes-data` (PVC) | YES (`tracking-id` annotation) | declared in `apnex/hermes/manifests/pvc.yaml` |
+| `honcho/data-postgres-0` (PVC) | NO | created by StatefulSet `volumeClaimTemplates`, not by a standalone manifest |
+| `pvc-a9187042-...` (PV) | NO | created by local-path provisioner at runtime |
+| `pvc-d7844fdd-...` (PV) | NO | created by local-path provisioner at runtime |
+
+The PVs are completely outside ArgoCD's scope, so the patches stick.
+The PVC manifests don't have a `persistentVolumeReclaimPolicy` field
+(it's a PV-level concept), so ArgoCD has nothing to "fix back to
+default."
+
+### What Retain actually protects you against
+
+`Retain` is **data recovery insurance**, not **data continuity**. If the
+PVC is deleted-and-recreated (e.g. by an accidental ArgoCD prune):
+
+1. PVC `hermes-data` deleted by ArgoCD
+2. PV enters `Released` state — data SURVIVES on the node disk at
+   `/var/lib/rancher/k3s/storage/pvc-XXX_hermes_hermes-data/`
+3. New PVC `hermes-data` reconciled by ArgoCD
+4. local-path provisioner sees the new PVC, creates a BRAND-NEW PV
+   with the default `Delete` reclaim, on an empty directory
+5. Pod mounts the new empty PV
+6. The old PV with your data is **orphaned** but still on disk
+
+Recovery requires manual binding: delete the new empty PV, patch the
+old PV to clear its `claimRef`, then manually point the new PVC at
+the old PV.
+
+### The real defence: cutover sync discipline
+
+The Retain patch is the **last line of defence**. The first line is:
+
+**Cutover safety invariant:**
+> Never set `prune: true` on ArgoCD Applications that own PVCs,
+> until the PVCs themselves have been migrated to a custom
+> StorageClass with `Retain` default.
+
+When migrating from the labops-owned `hermes` Application to the
+kate-owned one in Phase 4, use **`--cascade=orphan`**:
+
+```bash
+kubectl delete application hermes -n argocd --cascade=orphan
+```
+
+`--cascade=orphan` deletes the Application but leaves all its
+children (Deployments, Services, PVCs) untouched. The new kate-owned
+Application then "adopts" them by matching name+namespace on next
+reconcile. **No object is ever deleted.** This is the safe handoff
+pattern.
 
 **Future PVCs** created by either component will revert to `Delete`
 because that's the StorageClass default. Long-term fix (a custom
 StorageClass with `Retain` default) is tracked in
-`backup-offsite-roadmap.md` § "Substrate-level PV protection".
+`02-backup-offsite-roadmap.md` § "Substrate-level PV protection".
 
 ---
 
