@@ -170,42 +170,33 @@ backup, verify queries.
 
 ---
 
-## Phase A / 2 — labops Kyverno bootstrap
+## Phase A / 2 — labops Kyverno bootstrap  ✗ CANCELLED 2026-05-26 (journal entry 008)
 
-### Q-A1: What's the right Kyverno version to pin?
+**Outcome:** Cancelled. Live empirical validation revealed the design
+premise was wrong — the target annotation
+`metallb.io/ip-allocated-from-pool` is a MetalLB-written STATUS field,
+not a request field. Component manifests are already pool-agnostic.
+MetalLB's `autoAssign: true` IS the substrate-default mechanism;
+no admission-time decoration needed.
 
-**Why:** Need a stable, tested version. Latest may have unknown issues.
+Full investigation: `03-phase-a-kyverno-investigation.md`.
+Kyverno scripts kept as OPTIONAL infrastructure in
+`apnex/labops/kyverno/` for future use cases (not in default `k3s/up`).
 
-**Where to look:**
-- Kyverno release notes
-- Compatibility matrix with k3s/k8s 1.28+
-- Community feedback
+### Q-A1: What's the right Kyverno version to pin? — RESOLVED (moot)
 
-**Tentative:** `v1.13.4` (in architecture.md draft) — verify before
-committing.
+Implementation mirrors `metallb/install`: env-overridable
+`KYVERNO_VERSION`, defaults to latest GitHub release. Pattern works,
+moot now that Kyverno isn't used.
 
-**Resolution:** _(unanswered)_
+### Q-A2: Should the Kyverno policy exclude additional namespaces? — RESOLVED (moot)
 
-### Q-A2: Should the Kyverno policy exclude additional namespaces beyond `[kube-system, kyverno, argocd, metallb-system]`?
+Decision was: `[kube-system, kyverno, argocd, metallb-system]`. Tested
+and worked (kube-system Service correctly NOT mutated). Moot now.
 
-**Why:** Any future infra namespace would also need exclusion. If we miss
-one, that namespace's LoadBalancers get mutated unexpectedly.
+### Q-A3: Is `failurePolicy: Ignore` correct? — RESOLVED (moot)
 
-**Candidates worth considering:**
-- `cert-manager` (if added)
-- `monitoring` (Prometheus/Grafana, if added)
-- `ingress-*` (any future ingress controller)
-
-**Resolution:** _(unanswered — defer until those namespaces actually exist)_
-
-### Q-A3: Is `failurePolicy: Ignore` correct, or should it be `Fail`?
-
-**Why:** Ignore = fail-open (cluster keeps working if Kyverno down).
-Fail = fail-closed (admissions block if Kyverno down).
-
-**Tentative:** Ignore for a home lab; Fail for production-grade.
-
-**Resolution:** Ignore (per architecture.md draft). _(verify before deploy)_
+Decision: Ignore (fail-open). Correct for a home lab. Moot now.
 
 ---
 
