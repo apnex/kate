@@ -98,6 +98,67 @@ kyverno/prepare → argo/install`.
 
 ---
 
+## Entry 006 — 2026-05-26 — Phase C resolved: backups working, PVs patched
+
+**What:** Six Q-C questions answered. Two PVs (hermes-data,
+data-postgres-0) patched live from `Delete` to `Retain` reclaim policy
+as cutover insurance. Two production backup scripts written, debugged
+through three iterations, and verified end-to-end with byte-exact
+integrity checks.
+
+**PV reclaim patches applied:**
+- `pvc-a9187042-...` (hermes-data) → Retain
+- `pvc-d7844fdd-...` (data-postgres-0) → Retain
+
+**Backups verified:**
+- `/root/backups/hermes/hermes-*.tar.gz` — 346 MB, gzip integrity OK,
+  13063 files, SQLite snapshots present, state.db verified to contain
+  79 sessions + 7711 messages intact
+- `/root/backups/honcho/honcho-*.sql.gz` — 53 MB, pg_dump
+  transactionally consistent
+
+**Three operational lessons discovered (captured in journal,
+verification doc, and procedures doc):**
+
+1. Live SQLite + tar = corrupt snapshot. Use `sqlite3.backup()` API.
+   In-pod: `/opt/hermes/.venv/bin/python` has sqlite3 stdlib.
+2. GNU tar exits 1 (warning, archive usable) for "files differ as we
+   read", which `set -e` treats as fatal. Explicit RC handling needed.
+3. `kubectl cp` truncates large files. ALWAYS use `kubectl exec --
+   cat | <dest>` for any binary transfer > 50MB.
+
+**Per user direction:**
+- Backup target: NUC `/root/backups/` for now
+- Off-host (Backblaze B2): designed in `02-backup-offsite-roadmap.md`,
+  deferred until system finalised
+- No scheduled backups yet — manual only until system is finalised
+- Substrate-level PV protection (custom StorageClass with Retain
+  default): tracked in offsite roadmap doc for future labops work
+
+**Files created/updated in apnex/kate:**
+- `kate/scripts/backup-hermes.sh` — production-ready, ~80 lines
+- `kate/scripts/backup-honcho.sh` — production-ready, ~25 lines
+- `kate/docs/research/platform-migration/02-backup-procedures.md` —
+  comprehensive procedure doc with restore commands
+- `kate/docs/research/platform-migration/02-backup-offsite-roadmap.md` —
+  the deferred Option (b) design
+- `kate/docs/research/platform-migration/02-backup-verification-2026-05-26.md` —
+  first-run verification log with all three iteration lessons
+
+**Outstanding:**
+- Restore procedures documented but NOT TESTED. Should be done before
+  cutover. Suggested: parallel test namespace, restore, query verify.
+
+**Consequences:**
+- Phase C / 3a substantially complete; Risk 1 + Risk 2 are now in
+  manageable shape
+- Two of three "biggest unknowns" (D, C) are now closed
+- Phase ordering proceeds to A / 2 (labops Kyverno bootstrap) next
+- One residual phase-C task: restore testing (small, can be folded
+  into Phase E or done independently)
+
+---
+
 ## Entry 005 — 2026-05-26 — Phase D resolved: Risk 3 is LOW, cutover NOT blocked
 
 **What:** Audited the custom container image. All six Q-D questions

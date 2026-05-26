@@ -93,72 +93,80 @@ does NOT block cutover.
 
 ---
 
-## Phase C / 3a — Backup discipline
+## Phase C / 3a — Backup discipline  ✓ PARTIALLY RESOLVED 2026-05-26 (journal entry 006)
 
 ### Q-C1: What PVCs exist in `hermes` namespace, and what are they bound to?
 
-**Why:** Confirms cutover survival logic for hermes state.
-
-**Where to look:**
-- `kubectl get pvc -n hermes`
-- `kubectl describe pvc -n hermes <name>`
-- `kubectl get pv | grep hermes`
-
-**Resolution:** _(unanswered)_
+**Resolution:** Single PVC `hermes-data`, 10Gi, local-path StorageClass,
+bound to PV `pvc-a9187042-3c89-475b-8bb3-92c006f6f610` at
+`/var/lib/rancher/k3s/storage/pvc-a9187042-3c89-475b-8bb3-92c006f6f610_hermes_hermes-data`.
+Mounted at `/opt/data` in the pod. 273MB used of 1.8TB host capacity.
 
 ### Q-C2: Does the hermes PVC have `persistentVolumeReclaimPolicy: Retain`?
 
-**Why:** `Retain` survives PVC deletion. `Delete` does not. Critical for
-cutover safety.
-
-**Where to look:**
-- `kubectl get pv <name> -o jsonpath='{.spec.persistentVolumeReclaimPolicy}'`
-- `apnex/hermes/manifests/` PVC manifest (if defined in repo)
-
-**Resolution:** _(unanswered)_
+**Resolution:** Originally `Delete` (local-path default). **Patched live
+to `Retain` 2026-05-26** with:
+```bash
+kubectl patch pv pvc-a9187042-3c89-475b-8bb3-92c006f6f610 \
+  -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+```
+Future PVCs will default back to `Delete` — fix tracked in
+`02-backup-offsite-roadmap.md` § Substrate-level PV protection.
 
 ### Q-C3: Same as Q-C1 / Q-C2 but for `honcho` namespace.
 
-**Where to look:**
-- `kubectl get pvc -n honcho`
-- `kubectl get statefulset -n honcho` (Postgres likely uses STS+volumeClaimTemplates)
-- `apnex/honcho/manifests/`
+**Resolution:** Single PVC `data-postgres-0` (StatefulSet's
+volumeClaimTemplate), 10Gi, local-path, bound to PV
+`pvc-d7844fdd-1276-4195-b384-e3bf39c27625`. Honcho stack is:
+- `honcho` Deployment (API server, stateless)
+- `honcho-deriver` Deployment (dialectic worker, stateless)
+- `postgres` StatefulSet (pgvector/pgvector:pg17 image) — STATE
+- `redis` Deployment (transient queue)
 
-**Resolution:** _(unanswered)_
+PV reclaim patched to `Retain` 2026-05-26.
 
 ### Q-C4: Where will backups be stored off-cluster?
 
-**Why:** PVC integrity doesn't help if the cluster dies. Need an
-independent storage target.
-
-**Candidate options:**
-- NUC host filesystem (already accessible, but same-machine = not really off-cluster)
-- S3 / B2 / R2 bucket (real off-cluster)
-- Some other persistent storage you trust
-
-**Resolution:** _(unanswered)_
+**Resolution:** NUC host at `/root/backups/` (in-cluster trust
+boundary). Per user direction, off-host migration deferred — see
+`02-backup-offsite-roadmap.md` for the planned Backblaze B2 path.
 
 ### Q-C5: How is the Honcho Postgres database authenticated?
 
-**Why:** Need credentials to run `pg_dump`. If credentials are in a
-Secret, easy. If they're in a config file in the pod, slightly harder.
-
-**Where to look:**
-- `kubectl get secret -n honcho`
-- `apnex/honcho/manifests/` for Secret references
-- Honcho's config docs
-
-**Resolution:** _(unanswered)_
+**Resolution:** Secret `postgres-credentials` (3 keys:
+`POSTGRES_USER=honcho`, `POSTGRES_DB=honcho`, `POSTGRES_PASSWORD`).
+envFrom on the `postgres-0` container, so `pg_dump -U "$POSTGRES_USER"
+-d "$POSTGRES_DB"` works directly inside the pod via the in-pod env.
 
 ### Q-C6: Backup frequency and retention policy?
 
-**Why:** Need to decide before scripting. Daily? Weekly? How many
-generations to keep?
+**Resolution:** Per user direction, NO scheduled backups yet. Manual
+only until system is finalised. Scripts ready for cron integration
+when ready. Tentative retention discussed (14 daily + 8 weekly + 6
+monthly = ~12.5 GB ceiling) but not yet implemented.
 
-**Tentative:** Daily backups, retain 7 days + 4 weekly + 12 monthly.
-But user input wanted before encoding.
+### Operational reality check (added during work)
 
-**Resolution:** _(unanswered, pending user decision)_
+Three iterations of debugging the hermes backup revealed important
+operational truths:
+
+1. **Live SQLite + naive tar = corrupt snapshot.** Use Python
+   `sqlite3.backup()` API to take MVCC-safe snapshots before tarring.
+2. **GNU tar exits 1 on "some files differ as we read"** — usable
+   archive per tar docs but kills `set -e` scripts. Explicit
+   exit-code handling required.
+3. **`kubectl cp` truncates large files** (>50MB observed). Always
+   stream via `kubectl exec ... -- cat | <dest>` instead.
+
+All three captured in `02-backup-verification-2026-05-26.md` and in
+the final scripts at `kate/scripts/backup-{hermes,honcho}.sh`.
+
+### Outstanding: Restore testing
+
+Restore procedures are documented but have NOT been verified in
+practice. Should be done before declaring Phase C truly complete.
+Suggested approach: spin up a parallel test namespace, restore the
+backup, verify queries.
 
 ---
 
