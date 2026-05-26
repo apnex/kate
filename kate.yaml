@@ -1,0 +1,41 @@
+# kate — opinionated agent platform on Kubernetes
+#
+# This file is the install entry point. Applying it bootstraps the
+# "default" bundle via ArgoCD, which in turn manages every component
+# of the kate platform (hermes, honcho, their LoadBalancer VIPs, etc.).
+#
+# Install:
+#   kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/kate.yaml
+#
+# Pre-requisites:
+#   - Kubernetes cluster (k3s/k8s 1.28+)
+#   - ArgoCD installed in the `argocd` namespace
+#   - MetalLB (or compatible LoadBalancer) for VIP allocation
+#   See prereqs/README.md for details and verify.sh for a preflight check.
+#
+# To install a different bundle (e.g. minimal, voice), apply the
+# corresponding root.yaml under bundles/<name>/root.yaml instead.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kate
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/apnex/kate
+    targetRevision: main
+    path: bundles/default
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

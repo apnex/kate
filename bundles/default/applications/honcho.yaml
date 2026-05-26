@@ -1,0 +1,25 @@
+# honcho — AI-native memory server. Powers hermes's cross-session
+# memory, peer profiles, and dialectic reasoning.
+# Source: apnex/honcho — the self-hosted Honcho deploy manifests.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: honcho
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/apnex/honcho
+    targetRevision: main
+    path: manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: honcho
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
