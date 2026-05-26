@@ -1,0 +1,27 @@
+# kate / default bundle — service registry.
+# Each entry is rendered into one ArgoCD Application by services.appset.yaml.
+#
+# Schema (mirrors labops/argo/services.yaml for consistency):
+#   Required (all):  name, type (git|helm), repoURL, revision, namespace
+#   Required (git):  gitPath
+#   Required (helm): chart        Optional (helm): values
+#
+# Substrate concerns (MetalLB pool annotations, etc.) are NOT expressed here.
+# Components ship substrate-agnostic manifests; the substrate (labops) applies
+# substrate-specific defaults via cluster-wide policy (Kyverno). This keeps
+# kate's registry pure intent — "install hermes + honcho" — and portable
+# across substrates.
+
+- name: hermes
+  type: git
+  repoURL: https://github.com/apnex/hermes
+  gitPath: manifests
+  revision: main
+  namespace: hermes
+
+- name: honcho
+  type: git
+  repoURL: https://github.com/apnex/honcho
+  gitPath: manifests
+  revision: main
+  namespace: honcho

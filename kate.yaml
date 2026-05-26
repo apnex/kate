@@ -1,20 +1,22 @@
 # kate — opinionated agent platform on Kubernetes
 #
-# This file is the install entry point. Applying it bootstraps the
-# "default" bundle via ArgoCD, which in turn manages every component
-# of the kate platform (hermes, honcho, their LoadBalancer VIPs, etc.).
+# This file is the install entry point. Applying it bootstraps the default
+# bundle's ApplicationSet, which reads bundles/default/services.yaml and
+# creates one ArgoCD Application per registry entry.
 #
 # Install:
 #   kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/kate.yaml
 #
-# Pre-requisites:
+# Pre-requisites (see prereqs/README.md):
 #   - Kubernetes cluster (k3s/k8s 1.28+)
 #   - ArgoCD installed in the `argocd` namespace
-#   - MetalLB (or compatible LoadBalancer) for VIP allocation
-#   See prereqs/README.md for details and verify.sh for a preflight check.
+#   - LoadBalancer support (any CNI/controller — kate is substrate-agnostic)
+#   - Substrate-level defaults configured (e.g. labops provides MetalLB +
+#     Kyverno policies that decorate LoadBalancer Services with pool
+#     annotations)
 #
-# To install a different bundle (e.g. minimal, voice), apply the
-# corresponding root.yaml under bundles/<name>/root.yaml instead.
+# To install a different bundle (e.g. minimal, voice) once they exist,
+# apply that bundle's services.appset.yaml under bundles/<name>/ instead.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -29,7 +31,7 @@ spec:
     targetRevision: main
     path: bundles/default
     directory:
-      recurse: true
+      include: 'services.appset.yaml'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

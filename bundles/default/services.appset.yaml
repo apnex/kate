@@ -1,0 +1,64 @@
+# kate / default bundle — ApplicationSet + service registry.
+#
+# Mirrors the labops/argo registry pattern: a git-generator ApplicationSet
+# reads bundles/default/services.yaml and creates one ArgoCD Application
+# per entry, all sharing a uniform syncPolicy.
+#
+# Add an entry to services.yaml → a new component is installed.
+# Remove an entry → component is pruned (selfHeal + prune are on).
+#
+# Applied transitively when kate.yaml (repo root) is installed, or directly:
+#   kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/bundles/default/services.appset.yaml
+#
+# Substrate awareness (MetalLB pool annotations, etc.) is intentionally absent
+# here. Components ship substrate-agnostic manifests; substrates (e.g. labops)
+# decorate at admission via cluster-wide policies. This keeps kate portable
+# across substrates without per-bundle per-substrate variants.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kate-default
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://github.com/apnex/kate
+        revision: HEAD
+        files:
+          - path: bundles/default/services.yaml
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      source:
+        repoURL: '{{ .repoURL }}'
+        targetRevision: '{{ .revision }}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m
+  templatePatch: |
+    spec:
+      source:
+        {{- if eq .type "helm" }}
+        chart: {{ .chart | quote }}
+        {{- if .values }}
+        helm:
+          valuesObject: {{ .values | toJson }}
+        {{- end }}
+        {{- else }}
+        path: {{ .gitPath | quote }}
+        {{- end }}
