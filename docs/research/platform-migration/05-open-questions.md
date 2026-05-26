@@ -13,76 +13,83 @@ answer changes.
 
 ---
 
-## Phase D / 3b — Custom container image audit
+## Phase D / 3b — Custom container image audit  ✓ RESOLVED 2026-05-26 (journal entry 005)
 
 ### Q-D1: What container image is hermes currently running?
 
-**Why:** Establishes baseline. If it's stock upstream, no audit needed.
-If it's custom, this is the entry point to the rest of phase D.
-
-**Where to look:**
-- `kubectl get pod -n hermes -o jsonpath='{.items[0].spec.containers[0].image}'`
-- Cross-check with `kubectl get deployment -n hermes hermes -o yaml`
-- Compare against current `apnex/hermes/manifests/deployment.yaml`
-
-**Resolution:** _(unanswered)_
+**Resolution:** `localhost/hermes-agent:v2026.5.16-voice`. Locally
+built, local registry, `-voice` tag suffix denoting the audio
+extension layer. `imagePullPolicy: IfNotPresent`. Declared in
+`apnex/hermes/manifests/deployment.yaml` line 200.
 
 ### Q-D2: Where is the custom image built, and what's the build pipeline?
 
-**Why:** If we keep the fork, we need to keep the build alive (and
-document it for kate). If we retire it, we need to know what to
-decommission.
-
-**Where to look:**
-- `/host/hermes/image/Dockerfile` — likely the build source
-- Any CI config (`.github/workflows/`) in `apnex/hermes`
-- Container registry the image is pushed to
-- Image tag conventions
-
-**Resolution:** _(unanswered)_
+**Resolution:**
+- Build files in-repo at `apnex/hermes/image/` (Dockerfile + build.sh)
+- Pipeline: manual `./build.sh` — `docker build` then
+  `docker save | k3s ctr -n k8s.io images import` to load directly
+  into the k3s node's containerd
+- No CI (`.github/workflows/` empty)
+- No registry push — image lives only on the k3s node
+- Tag controlled by `TAG=` env var, defaults to current version
 
 ### Q-D3: What modifications were made vs upstream `apnex/hermes` main?
 
-**Why:** Drives the classification table (stock/forkable/PR-able/fork-required).
+**Resolution:** The Dockerfile is **exceptionally well-documented**.
+Every modification has explicit purpose comments. Base image is
+stock `docker.io/nousresearch/hermes-agent:v2026.5.16` (unmodified
+upstream). Modifications layered atop:
 
-**Where to look:**
-- `git log` in `/host/hermes` (or wherever the fork lives)
-- `diff` against upstream Dockerfile
-- Any patched source files in the fork
-- Commit messages explaining the "why" of each change
+**Audio/voice stack (universal, potentially upstreamable):**
+- System: libportaudio2, libasound2-plugins, alsa-utils
+- Python: sounddevice, numpy, faster-whisper, edge-tts
+- Discord voice: discord.py, PyNaCl, davey (DAVE E2EE)
 
-**Resolution:** _(unanswered)_
+**Apnex-specific dev capability (NOT upstreamable):**
+- kubectl (cluster admin via ServiceAccount)
+- /usr/local/bin/nuc wrapper (SSH-back-to-host)
+- gh CLI + system-wide git credential helper using gh auth
+- System git identity: hermes / kate@apnex.local
 
-### Q-D4: Are any of those modifications now upstream?
+**Other:**
+- honcho-ai SDK pre-installed
 
-**Why:** If yes → switch to stock image, retire custom build (best case).
-If no → continue audit.
+### Q-D4: Are any modifications now upstream?
 
-**Where to look:**
-- Cross-reference Q-D3 findings against current upstream
-- `git log` in upstream for relevant subsystems (plugins, audio)
-- Hermes release notes
-
-**Resolution:** _(unanswered)_
+**Resolution:** Unknown precisely — but **doesn't matter for the
+cutover decision**. Even if 100% of the voice stack is upstreamable,
+the apnex-specific dev capability layer (kubectl/nuc/gh) means the
+fork must continue. Future cleanup work could PR the voice stack
+upstream; doesn't gate cutover.
 
 ### Q-D5: For modifications not upstream, are they PR-able?
 
-**Why:** PR-able means we can upstream them and migrate. Not PR-able
-means we maintain a fork forever (acceptable but document the why).
-
-**Where to look:**
-- Read each modification — is it apnex-specific or general?
-- Check upstream contribution guidelines
-- Consider what tests would be needed
-
-**Resolution:** _(unanswered)_
+**Resolution (deferred to future cleanup work):**
+- Audio/voice stack: **PR-able** as optional variant or extras
+- Apnex-specific (kubectl/nuc/gh): **NOT PR-able** — must remain a
+  fork because they're cluster/lab specific
 
 ### Q-D6: Where will kate's manifests point — stock image or fork image?
 
-**Why:** Determines kate's `apnex/hermes/manifests/deployment.yaml`
-contents post-audit.
+**Resolution: Keep the fork image.** `localhost/hermes-agent:v2026.5.16-voice`
+remains the deployment image. The apnex-specific dev capability layer
+alone makes the fork mandatory. Kate's `apnex/hermes/manifests/deployment.yaml`
+keeps the existing image reference unchanged through cutover.
 
-**Resolution:** Depends on Q-D1 through Q-D5. _(unanswered)_
+### Risk 3 assessment: LOW
+
+Original concern was "nobody remembers why these patches exist."
+Reality is opposite — Dockerfile is self-documenting, build is
+reproducible, modifications are intentional and understood. Phase D
+does NOT block cutover.
+
+**Residual concerns to document (NOT blockers):**
+1. Image build is manual (no CI). Acceptable for lab.
+2. Image lives only on k3s node containerd. If node rebuilt, must
+   rebuild image. Acceptable for single-node.
+3. Base image pin requires manual bump-and-rebuild. Document upgrade
+   procedure in `hermes/image/README.md` (does not exist yet — could
+   be a small future polish).
 
 ---
 

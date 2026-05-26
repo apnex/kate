@@ -98,6 +98,52 @@ kyverno/prepare → argo/install`.
 
 ---
 
+## Entry 005 — 2026-05-26 — Phase D resolved: Risk 3 is LOW, cutover NOT blocked
+
+**What:** Audited the custom container image. All six Q-D questions
+resolved in one investigation pass.
+
+**Image:** `localhost/hermes-agent:v2026.5.16-voice`. Built locally via
+`apnex/hermes/image/build.sh` from a self-documenting Dockerfile that
+layers two distinct concerns atop the stock upstream image:
+
+1. **Audio/voice stack** (PR-able, universal) — PortAudio, ALSA,
+   sounddevice, faster-whisper, edge-tts, discord.py + PyNaCl + davey
+   for voice channel support
+2. **Apnex-specific dev capability** (NOT PR-able, lab-specific) —
+   kubectl for cluster admin, /usr/local/bin/nuc SSH-back-to-host
+   wrapper, gh CLI + system-wide git credential helper, system git
+   identity hermes/kate@apnex.local
+
+**Why this matters:** The originally-feared scenario was "nobody
+remembers why these patches exist, audit is needed before cutover."
+Reality is the opposite — the Dockerfile is exceptionally
+self-documenting, every modification has an explicit comment block
+explaining what and why. The build process is simple and reproducible.
+
+**Decisions:**
+
+- **Risk 3 reclassified: LOW.** Does NOT block cutover.
+- **Keep the fork image.** The apnex-specific layer alone makes the
+  fork mandatory even if the entire audio stack were upstreamed
+  tomorrow.
+- **Kate's manifests unchanged.** `apnex/hermes/manifests/deployment.yaml`
+  already references the fork image; no Phase 4 changes needed for
+  this aspect.
+
+**Residual concerns (NOT blockers, documented for future):**
+- Image build is manual (no CI) — acceptable for lab
+- Image lives only on k3s node containerd — acceptable for single-node
+- Base image pin requires manual bump-and-rebuild — could benefit from
+  a small `hermes/image/README.md` documenting the upgrade procedure
+
+**Consequences:**
+- Phase D / 3b complete, faster than expected
+- Phase ordering proceeds to C / 3a (backup discipline) next
+- One less unknown gating Phase 4
+
+---
+
 ## Entry 004 — 2026-05-26 — Session halt; resumption documentation in place
 
 **What:** Session ends here. Created `docs/research/platform-migration/`
