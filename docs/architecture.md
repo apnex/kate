@@ -142,14 +142,68 @@ win.
 
 ---
 
-## Current state (HEAD as of 2026-05-26)
+## Component sovereignty — known violations
+
+The boundaries above are aspirational. As of 2026-05-27, component repos
+(currently `apnex/hermes`; `apnex/honcho` not yet audited) assert things
+that belong to either the substrate or the bundle. The audit was forced
+into visibility by building the first non-default bundle (`bundles/minimal/`):
+each variant beyond `default` re-exposes the leaks, and fixing them at
+the right layer is what makes "minimal vs default vs advanced" meaningful
+rather than a series of patches papering over upstream coupling.
+
+```
+                    ┌──────────────────────────────────────┐
+                    │  Currently leaked into hermes:       │
+                    │                                      │
+                    │  ┌──────────────────────────────┐    │
+  substrate ──→     │  │ pv.yaml: nodeAffinity=obpc   │    │  ←── belongs to substrate
+                    │  └──────────────────────────────┘    │      (dynamic SC, cluster
+                    │                                      │       default binding)
+                    │  ┌──────────────────────────────┐    │
+  component ──→     │  │ deployment.yaml:             │    │  ←── belongs to component
+                    │  │   image: localhost/…         │    │      (registry-published
+                    │  └──────────────────────────────┘    │       image)
+                    │                                      │
+                    │  ┌──────────────────────────────┐    │
+  operator   ──→    │  │ deployment.yaml:             │    │  ←── belongs to operator
+                    │  │   HERMES_HOST_SSH_TARGET=… │    │      (Secret-supplied,
+                    │  │   (hardcoded NUC IP)         │    │       optional; default
+                    │  └──────────────────────────────┘    │       inert)
+                    │                                      │
+                    │  ┌──────────────────────────────┐    │
+  bundle     ──→    │  │ deployment.yaml:             │    │  ←── belongs to bundle
+                    │  │   /run/user/1000 + /root     │    │      (voice-bundle-only
+                    │  │   hostPath mounts            │    │       overlay; non-voice
+                    │  └──────────────────────────────┘    │       bundles get no mount)
+                    │                                      │
+                    │  apnex/hermes/manifests/             │
+                    └──────────────────────────────────────┘
+```
+
+| # | Violation | Currently in | Should live in | Status |
+|---|---|---|---|---|
+| 1 | Static PV with `nodeAffinity: obpc` | `hermes/manifests/pv.yaml` | Cluster default SC; hermes uses dynamic PVC | In progress |
+| 2 | `image: localhost/hermes-agent:…` | `hermes/manifests/deployment.yaml` | Public registry image; bundle can pin a tag | In progress |
+| 3 | `HERMES_HOST_SSH_TARGET=root@192.168.1.250` | `hermes/manifests/deployment.yaml` | Optional `hermes-secrets` key; default empty → `nuc` inert | Planned |
+| 4 | `/run/user/1000` + `/root` hostPath mounts | `hermes/manifests/deployment.yaml` | Voice-bundle overlay only; non-voice bundles drop the mounts | Planned |
+
+Order-of-attack rationale: **#2 first** (publish a registry image — one push
+unblocks every non-NUC cluster instantly); **#1 second** (drop the static PV
+and rely on the cluster default SC — minimal bundle then runs anywhere
+substrate-clean); **#3 and #4** are quality-of-life cleanups that sharpen
+the operator and bundle boundaries respectively.
+
+---
+
+## Current state (HEAD as of 2026-05-27)
 
 | Repo | HEAD | State |
 |---|---|---|
-| `apnex/kate` | `a1239b2` | Phase 1 complete: bundles/default/ uses appset+registry; **NOT yet installable** (would conflict with labops) |
-| `apnex/labops` | `faf12d2` | Owns hermes/honcho/vip-hermes Application entries in argo/services.yaml; no Kyverno yet |
-| `apnex/hermes` | `1960764` | manifests/ has Deployment + ClusterIP; no vip.yaml yet |
-| `apnex/honcho` | (unknown) | manifests/ has Deployment + ClusterIP; no vip.yaml yet |
+| `apnex/kate` | `757e911` | `bundles/default` + `bundles/minimal` (hermes-only, honcho-disabled overlay); substrate boundary documented |
+| `apnex/labops` | `2dd7e0b` | Substrate-only after the split: `argo/install` is platform-only (`services.appset.yaml` + `services.yaml` deleted); script preamble + profile.d PATH fix + StorageClass `Retain`; no Kyverno yet |
+| `apnex/hermes` | `a88fc8a` | `manifests/` + top-level `vip.yaml` (moved from labops); the four component-sovereignty violations above are not yet fixed |
+| `apnex/honcho` | (unchanged) | not audited yet |
 
 **Live cluster:**
 - 3 ArgoCD Applications: `hermes`, `honcho`, `vip-hermes` (managed by labops's ApplicationSet)
@@ -601,10 +655,6 @@ different clusters from one ArgoCD instance. Out of scope for now.
   resuming.**
 - `kate/docs/SESSION-RESUME.md` — top-level resumption pointer; the
   "read this first" file when picking up cold
-- `labops/argo/services.appset.yaml` — the canonical ApplicationSet
-  pattern kate mirrors
-- `labops/argo/services.yaml` — labops's current registry (will shrink
-  in Phase 4 cutover)
 - `labops/metallb/` — the shell-bootstrap pattern Kyverno will mirror
 - `labops/docs/superpowers/hermes-platform-roadmap.md` — broader
   multi-session planning document (not yet read into this architecture
@@ -614,6 +664,14 @@ different clusters from one ArgoCD instance. Out of scope for now.
 
 ## Change log
 
+- 2026-05-27 — added "Component sovereignty — known violations" section
+  with the four-violation table surfaced during the `bundles/minimal/`
+  build. Refreshed the Current State repo table with 2026-05-27 commit
+  hashes (kate `757e911`, labops `2dd7e0b`, hermes `a88fc8a`). Removed
+  Related-artifacts pointers to the now-deleted `labops/argo/services.yaml`
+  and `services.appset.yaml` (the substrate split that landed in labops
+  `99df4c2` deleted both — kate's own bundles/*/services.appset.yaml are
+  the canonical registry references now).
 - 2026-05-26 (rev 2) — added production cutover risks (1-4), revised
   phase model with 3a/3b/3c subdivisions, recorded approved execution
   sequence (D, C, A, B, E, F, G — ranked by importance), updated

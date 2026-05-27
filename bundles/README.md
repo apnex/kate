@@ -51,3 +51,7 @@ Bundles deliberately omit substrate-specific concerns:
 These are **substrate** concerns and belong in the substrate repo (labops
 or equivalent), applied via cluster-wide policies (e.g. Kyverno mutating
 policies). This keeps components and bundles portable across substrates.
+
+For the full three-layer model (substrate / composition / component), the
+sovereignty table, the four currently-known violations of the boundary,
+and the migration plan to fix them: see [`../docs/architecture.md`](../docs/architecture.md).

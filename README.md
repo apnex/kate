@@ -10,13 +10,18 @@ This repo deploys nothing. ArgoCD ignores it. It's docs + decisions + the
 ## The repo layer-cake
 
 ```
-apnex/labops           generic cluster infra (k3s, MetalLB, modules)
-apnex/hermes           Hermes app deployment (manifests, config template)
-apnex/honcho           Honcho app deployment (manifests, deriver, db)
-apnex/kate         ←   THIS REPO: cross-cutting docs + decisions
-                       + operator runbook + memory architecture
-                       + the "why we chose X" archive
+apnex/labops           substrate — k3s, MetalLB, storage, ArgoCD platform
+apnex/hermes           component — Hermes app deployment manifests + image
+apnex/honcho           component — Honcho app deployment manifests + db
+apnex/kate         ←   composition — opinionated bundles + cross-cutting
+                       docs + decisions; bundles/<name>/ is GitOps-installable
+                       via ArgoCD; docs/ is the "why we chose X" archive
 ```
+
+For the full three-layer sovereignty model (substrate / composition /
+component), the four known boundary violations, and the migration plan:
+see [`docs/architecture.md`](docs/architecture.md). For bundle authoring
+conventions: see [`bundles/README.md`](bundles/README.md).
 
 ## Layout
 
