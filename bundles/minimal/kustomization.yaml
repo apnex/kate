@@ -1,0 +1,33 @@
+# kate / minimal bundle — kustomize overlay on apnex/hermes.
+#
+# Base: hermes upstream manifests at the pinned ref below. Bump the ref
+# deliberately when validating a new hermes release against minimal.
+#
+# Overrides (configMapGenerator behavior: merge — replaces same-key files,
+# inherits the rest from upstream):
+#   - hermes-config.config.yaml.tpl       → drop memory + honcho blocks
+#   - hermes-config.honcho.json.tpl       → enabled: false (defensive — no
+#                                            plugin reads it once minimal is
+#                                            installed, but if a future flip
+#                                            loads honcho-tuned, it stays off)
+#   - hermes-plugin-sync.wanted-plugins.yaml → empty list — honcho-tuned plugin
+#                                              never syncs into /opt/data/plugins
+#
+# Everything else (deployment, service, PV/PVC, ServiceAccount, the
+# skill-sync ConfigMap, the unchanged plugin-sync.sh script) is inherited.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - https://github.com/apnex/hermes//manifests?ref=main
+
+configMapGenerator:
+  - name: hermes-config
+    behavior: merge
+    files:
+      - config.yaml.tpl
+      - honcho.json.tpl
+  - name: hermes-plugin-sync
+    behavior: merge
+    files:
+      - wanted-plugins.yaml

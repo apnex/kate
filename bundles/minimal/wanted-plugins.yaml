@@ -1,0 +1,6 @@
+# kate / bundles/minimal — no Hermes plugins synced.
+# Replaces apnex/hermes/manifests/plugin-sync/wanted-plugins.yaml via kustomize
+# merge. plugin-sync writes zero plugins to /opt/data/plugins → hermes-core's
+# memory plugin loader finds none → no remote memory backend is instantiated.
+
+plugins: []

@@ -1,0 +1,16 @@
+# kate / minimal bundle — service registry.
+#
+# Single entry: a kustomize overlay (this same directory) that bases on
+# apnex/hermes//manifests and replaces ConfigMaps to disable honcho.
+#
+# Schema (mirrors kate/bundles/default/services.yaml):
+#   Required (all):  name, type (git|helm), repoURL, revision, namespace
+#   Required (git):  gitPath
+#   Required (helm): chart        Optional (helm): values
+
+- name: hermes
+  type: git
+  repoURL: https://github.com/apnex/kate
+  gitPath: bundles/minimal
+  revision: main
+  namespace: hermes

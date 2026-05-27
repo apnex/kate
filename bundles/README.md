@@ -16,7 +16,7 @@ model, different scope: labops's registry holds **substrate** services
 | Bundle | Description | Install entry point |
 |---|---|---|
 | `default` | Full kate platform: hermes agent + honcho memory | `kate.yaml` (repo root) — or `bundles/default/services.appset.yaml` directly |
-| `minimal` | (planned) hermes agent only | — |
+| `minimal` | hermes agent only (no honcho memory) | `bundles/minimal/services.appset.yaml` |
 | `voice` | (planned) default + voice gateway + MCP integrations | — |
 
 ## Choosing a bundle
