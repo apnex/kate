@@ -38,10 +38,10 @@ spec:
       source:
         repoURL: '{{ .repoURL }}'
         targetRevision: '{{ .revision }}'
+      # TEMPORARY: automated sync disabled by apnex during out-of-band manifest
+      # edits to apnex/hermes. Re-enable by restoring the `automated:` block.
+      # Manual sync still works via ArgoCD UI / `argocd app sync <name>` / kubectl patch.
       syncPolicy:
-        automated:
-          selfHeal: true
-          prune: true
         syncOptions:
           - CreateNamespace=true
         retry:
