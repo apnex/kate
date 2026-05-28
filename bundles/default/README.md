@@ -80,29 +80,33 @@ for the migration plan.
 
 ## Install
 
-Prerequisite: the per-env secrets exist in GCP Secret Manager. See
-[`../../docs/secrets.md`](../../docs/secrets.md) for the naming convention and one-time provisioning.
-For default, populate at minimum the required keys plus the optional
-ones for whichever features you want (Discord, GH, host SSH).
+Prerequisite: secrets exist wherever you keep them (GCP Secret Manager,
+local file, password manager, etc.). See [`../../docs/secrets.md`](../../docs/secrets.md) for the
+backend-agnostic supply contract. For default, populate at minimum the
+required keys plus the optional ones for whichever features you want
+(Discord, GH, host SSH).
 
 ```sh
-# 1. Populate hermes namespace from GCP Secret Manager.
-./scripts/bootstrap-secrets hermes-vm   # replace with your env name
+# 1. Populate env vars from your preferred backing store.
+eval "$(./scripts/load-from-gcp hermes-vm)"     # GCP Secret Manager
+# source ~/secrets/hermes-vm.env                 # local file
+# export LITELLM_BASE_URL=...; ...               # manual
 
-# 2. honcho namespace + LLM key Secret (anti-stomp — out-of-band)
-#    Reads the same LITELLM_API_KEY from SM for parity with hermes.
+# 2. Apply hermes namespace ConfigMap + Secret.
+curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
+
+# 3. honcho namespace + LLM key Secret (anti-stomp — out-of-band).
+#    Reads the LITELLM_API_KEY env var populated in step 1 for parity.
 kubectl create namespace honcho
-LITELLM_API_KEY=$(gcloud secrets versions access latest \
-  --secret="kate-hermes-vm-LITELLM_API_KEY")
 kubectl -n honcho create secret generic honcho-llm-keys \
   --from-literal=LLM_OPENAI_API_KEY="$LITELLM_API_KEY"
 
-# 3. The bundle — generates two ArgoCD Applications (hermes + honcho).
+# 4. The bundle — generates two ArgoCD Applications (hermes + honcho).
 #    The sync-wave-ordered init Job auto-generates API_SERVER_KEY
 #    and patches hermes-credentials before the Deployment starts.
 kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/bundles/default/services.appset.yaml
 
-# 4. Retrieve the auto-generated API_SERVER_KEY for API calls.
+# 5. Retrieve the auto-generated API_SERVER_KEY for API calls.
 API_SERVER_KEY=$(kubectl -n hermes get secret hermes-credentials \
   -o jsonpath='{.data.API_SERVER_KEY}' | base64 -d)
 echo "$API_SERVER_KEY"

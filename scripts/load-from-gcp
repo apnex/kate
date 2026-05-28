@@ -1,0 +1,62 @@
+#!/bin/bash
+## load-from-gcp — print eval-safe env-var exports for kate's per-env
+##                 secrets, sourced from GCP Secret Manager.
+##
+## This is a POPULATOR — it does NOT apply anything to the cluster. It
+## prints `export KEY=value` lines to stdout that the operator evaluates
+## into their shell. The uniform application step downstream is hermes's
+## `set-secret`, which is backend-agnostic (reads env vars).
+##
+## Usage:
+##   eval "$(./load-from-gcp <env-name>)"
+##   curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
+##
+## One-liner:
+##   eval "$(./load-from-gcp hermes-vm)" \
+##     && curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
+##
+## Prerequisites:
+##   - gcloud auth (operator's identity) with secretmanager.secretAccessor
+##     on the kate-<env>-* secrets in the current gcloud project.
+##
+## Secret-naming convention (in GCP SM): kate-<env>-<KEY>
+##   Required: LITELLM_BASE_URL, LITELLM_MODEL, LITELLM_API_KEY
+##   Optional: HERMES_PEER_NAME, DISCORD_BOT_TOKEN, DISCORD_ALLOWED_USERS,
+##             GH_TOKEN, HERMES_HOST_SSH_KEY
+##
+## Other backends (local file, Vault, SOPS, 1Password, etc.) follow the
+## same shape: print eval-safe `export KEY=value` lines on stdout. The
+## operator picks the populator that matches where their secrets live.
+set -eu
+
+ENV="${1:?Usage: $0 <env-name>}"
+
+PROJECT=$(gcloud config get-value project 2>/dev/null)
+[[ -n "$PROJECT" ]] || { echo "ERROR: no gcloud project set (run: gcloud config set project <id>)" >&2; exit 1; }
+
+REQUIRED=( LITELLM_BASE_URL LITELLM_MODEL LITELLM_API_KEY )
+OPTIONAL=( HERMES_PEER_NAME DISCORD_BOT_TOKEN DISCORD_ALLOWED_USERS GH_TOKEN HERMES_HOST_SSH_KEY )
+
+fetch() {
+	gcloud secrets versions access latest --project="$PROJECT" --secret="kate-${ENV}-$1" 2>/dev/null
+}
+
+# Progress goes to stderr so stdout stays clean for eval.
+echo "# load-from-gcp: env=$ENV project=$PROJECT" >&2
+
+for key in "${REQUIRED[@]}"; do
+	val=$(fetch "$key") || { echo "ERROR: required secret kate-${ENV}-${key} not found (or no permission)" >&2; exit 1; }
+	[[ -n "$val" ]] || { echo "ERROR: required secret kate-${ENV}-${key} is empty" >&2; exit 1; }
+	# %q produces a single shell-quoted form safe for eval; handles
+	# values containing spaces, quotes, newlines, $, etc.
+	printf 'export %s=%q\n' "$key" "$val"
+	echo "#   + $key" >&2
+done
+
+for key in "${OPTIONAL[@]}"; do
+	val=$(fetch "$key" || true)
+	if [[ -n "$val" ]]; then
+		printf 'export %s=%q\n' "$key" "$val"
+		echo "#   + $key (optional)" >&2
+	fi
+done

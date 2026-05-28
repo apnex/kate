@@ -55,16 +55,22 @@ Reading the table:
 
 ## Install
 
-Prerequisite: the per-env secrets exist in GCP Secret Manager. See
-[`../../docs/secrets.md`](../../docs/secrets.md) for the naming convention and one-time provisioning.
+Prerequisite: secrets exist wherever you keep them (GCP Secret Manager,
+local file, password manager, etc.). See [`../../docs/secrets.md`](../../docs/secrets.md) for the
+backend-agnostic supply contract.
 
 ```sh
-# 1. Populate cluster from GCP Secret Manager.
-#    Reads kate-<env>-* from your current gcloud project, creates the
-#    hermes namespace + hermes-config ConfigMap + hermes-credentials Secret.
-./scripts/bootstrap-secrets hermes-vm   # replace with your env name
+# 1. Populate env vars from your preferred backing store.
+#    Pick whichever line matches your setup:
+eval "$(./scripts/load-from-gcp hermes-vm)"     # GCP Secret Manager
+# source ~/secrets/hermes-vm.env                 # local file
+# export LITELLM_BASE_URL=...; export LITELLM_MODEL=...; ...   # manual
 
-# 2. The bundle — generates one ArgoCD Application (hermes) from
+# 2. Apply (uniform — backend-agnostic).
+#    Creates hermes namespace + hermes-config ConfigMap + hermes-credentials Secret.
+curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
+
+# 3. The bundle — generates one ArgoCD Application (hermes) from
 #    services.yaml; hermes Application points at THIS directory, where
 #    kustomization.yaml bases on apnex/hermes//manifests + overlays.
 #    The sync-wave-ordered init Job (in upstream hermes manifests)
@@ -72,7 +78,7 @@ Prerequisite: the per-env secrets exist in GCP Secret Manager. See
 #    before the Deployment starts.
 kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/bundles/minimal/services.appset.yaml
 
-# 3. Retrieve the auto-generated API_SERVER_KEY (operator needs it to call /v1/*)
+# 4. Retrieve the auto-generated API_SERVER_KEY (operator needs it to call /v1/*)
 API_SERVER_KEY=$(kubectl -n hermes get secret hermes-credentials \
   -o jsonpath='{.data.API_SERVER_KEY}' | base64 -d)
 echo "$API_SERVER_KEY"   # store somewhere — bot's API auth
