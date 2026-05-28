@@ -5,13 +5,17 @@
 #
 # Overrides (configMapGenerator behavior: merge — replaces same-key files,
 # inherits the rest from upstream):
-#   - hermes-config.config.yaml.tpl       → drop memory + honcho blocks
-#   - hermes-config.honcho.json.tpl       → enabled: false (defensive — no
-#                                            plugin reads it once minimal is
-#                                            installed, but if a future flip
-#                                            loads honcho-tuned, it stays off)
+#   - hermes-templates.config.yaml.tpl       → drop memory + honcho blocks
+#   - hermes-templates.honcho.json.tpl       → enabled: false (defensive — no
+#                                              plugin reads it once minimal is
+#                                              installed, but if a future flip
+#                                              loads honcho-tuned, it stays off)
 #   - hermes-plugin-sync.wanted-plugins.yaml → empty list — honcho-tuned plugin
 #                                              never syncs into /opt/data/plugins
+#
+# Note: `hermes-templates` is the kustomize-generated ConfigMap with the
+# seed-config templates. Distinct from `hermes-config`, the operator-supplied
+# ConfigMap (LITELLM_BASE_URL etc.) that's created out-of-band by set-secret.
 #
 # Everything else (deployment, service, PV/PVC, ServiceAccount, the
 # skill-sync ConfigMap, the unchanged plugin-sync.sh script) is inherited.
@@ -22,7 +26,7 @@ resources:
   - https://github.com/apnex/hermes//manifests?ref=main
 
 configMapGenerator:
-  - name: hermes-config
+  - name: hermes-templates
     behavior: merge
     files:
       - config.yaml.tpl

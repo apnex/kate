@@ -27,7 +27,7 @@ section below covers how; this table is the inventory you reason from.
 | `LITELLM_BASE_URL` | config | yes | per environment (different LLM router URL per env) | operator-supplied | `hermes-config` ConfigMap |
 | `LITELLM_MODEL` | config | yes | per environment (router's model alias) | operator-supplied | `hermes-config` ConfigMap |
 | `LITELLM_API_KEY` | secret | yes | per environment (one key per router) | operator-supplied | `hermes-credentials` Secret |
-| `API_SERVER_KEY` | secret | yes | **unique per deployment** | generated (`openssl rand -hex 32`) | `hermes-credentials` Secret |
+| `API_SERVER_KEY` | secret | yes | **unique per deployment** | **auto-generated in-cluster** by `hermes/manifests/init-credentials-job.yaml` (operator can override by exporting `API_SERVER_KEY` before `set-secret`) | `hermes-credentials` Secret |
 | `HERMES_PEER_NAME` | config | optional | per deployment | operator-supplied; defaults to `default-user` if absent | `hermes-config` ConfigMap (key optional) |
 
 Reading the table:
@@ -60,21 +60,25 @@ Reading the table:
 export LITELLM_BASE_URL="https://your-llm-router/v1"
 export LITELLM_MODEL="your-default-model"
 export LITELLM_API_KEY="sk-your-key"
-export API_SERVER_KEY="$(openssl rand -hex 32)"
+# API_SERVER_KEY is auto-generated in-cluster by the init Job.
+# Only set it explicitly if importing a key from a previous deployment.
 
 # apnex/hermes ships set-secret which creates the namespace + both
-# resources from these env vars. Equivalent to running:
-#   kubectl create namespace hermes
-#   kubectl -n hermes create configmap hermes-config \
-#     --from-literal=LITELLM_BASE_URL=... --from-literal=LITELLM_MODEL=...
-#   kubectl -n hermes create secret generic hermes-credentials \
-#     --from-literal=LITELLM_API_KEY=... --from-literal=API_SERVER_KEY=...
+# resources from these env vars.
 curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
 
 # 2. The bundle — generates one ArgoCD Application (hermes) from
 #    services.yaml; hermes Application points at THIS directory, where
 #    kustomization.yaml bases on apnex/hermes//manifests + overlays.
+#    On first sync, the PreSync hook Job (in upstream hermes manifests)
+#    generates API_SERVER_KEY and patches it into hermes-credentials
+#    before the Deployment starts.
 kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/bundles/minimal/services.appset.yaml
+
+# 3. Retrieve the auto-generated API_SERVER_KEY (operator needs it to call /v1/*)
+API_SERVER_KEY=$(kubectl -n hermes get secret hermes-credentials \
+  -o jsonpath='{.data.API_SERVER_KEY}' | base64 -d)
+echo "$API_SERVER_KEY"   # store somewhere — bot's API auth
 ```
 
 ## Verify

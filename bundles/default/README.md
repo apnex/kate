@@ -25,7 +25,7 @@ the same as minimal; rows below the divider are default-only.
 | `LITELLM_BASE_URL` | config | yes | per environment | operator-supplied | `hermes-config` ConfigMap |
 | `LITELLM_MODEL` | config | yes | per environment | operator-supplied | `hermes-config` ConfigMap |
 | `LITELLM_API_KEY` | secret | yes | per environment | operator-supplied | `hermes-credentials` Secret |
-| `API_SERVER_KEY` | secret | yes | **unique per deployment** | generated (`openssl rand -hex 32`) | `hermes-credentials` Secret |
+| `API_SERVER_KEY` | secret | yes | **unique per deployment** | **auto-generated in-cluster** by `hermes/manifests/init-credentials-job.yaml` (operator can override by exporting `API_SERVER_KEY` before `set-secret`) | `hermes-credentials` Secret |
 | `HERMES_PEER_NAME` | config | optional | per deployment | operator-supplied; defaults to `default-user` | `hermes-config` ConfigMap (key optional) |
 | --- default-only --- | | | | | |
 | `DISCORD_BOT_TOKEN` | secret | optional (feature flag) | per deployment | operator-supplied; absence → Discord gateway inert | `hermes-credentials` Secret (key optional) |
@@ -85,7 +85,8 @@ for the migration plan.
 export LITELLM_BASE_URL="https://your-llm-router/v1"
 export LITELLM_MODEL="your-default-model"
 export LITELLM_API_KEY="sk-your-key"
-export API_SERVER_KEY="$(openssl rand -hex 32)"
+# API_SERVER_KEY is auto-generated in-cluster by the init Job.
+# Only set it explicitly if importing a key from a previous deployment.
 # Optional Discord:
 # export DISCORD_BOT_TOKEN="..."
 # export DISCORD_ALLOWED_USERS="123,456"
@@ -94,8 +95,9 @@ export API_SERVER_KEY="$(openssl rand -hex 32)"
 # Optional host SSH (PEM key body in env; enables `nuc` wrapper):
 # export HERMES_HOST_SSH_KEY="$(cat /path/to/id_ed25519)"
 
-# Creates: namespace hermes; ConfigMap hermes-config; Secret hermes-credentials;
-# optionally Secret hermes-host-ssh-key.
+# Creates: namespace hermes; ConfigMap hermes-config; Secret hermes-credentials
+# (without API_SERVER_KEY — that's auto-injected by the init Job); optionally
+# Secret hermes-host-ssh-key.
 curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
 
 # 2. honcho namespace + LLM key Secret (anti-stomp — out-of-band)
@@ -103,8 +105,15 @@ kubectl create namespace honcho
 kubectl -n honcho create secret generic honcho-llm-keys \
   --from-literal=LLM_OPENAI_API_KEY="$LITELLM_API_KEY"
 
-# 3. The bundle — generates two ArgoCD Applications (hermes + honcho)
+# 3. The bundle — generates two ArgoCD Applications (hermes + honcho).
+#    On first sync, hermes's PreSync hook Job auto-generates API_SERVER_KEY
+#    and patches hermes-credentials before the Deployment starts.
 kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/bundles/default/services.appset.yaml
+
+# 4. Retrieve the auto-generated API_SERVER_KEY for API calls.
+API_SERVER_KEY=$(kubectl -n hermes get secret hermes-credentials \
+  -o jsonpath='{.data.API_SERVER_KEY}' | base64 -d)
+echo "$API_SERVER_KEY"
 ```
 
 ## Verify
