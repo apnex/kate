@@ -39,13 +39,13 @@ spec:
             - name: DISCORD_BOT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: hermes-secrets
+                  name: hermes-credentials
                   key: DISCORD_BOT_TOKEN
                   optional: true
             - name: DISCORD_ALLOWED_USERS
               valueFrom:
-                secretKeyRef:
-                  name: hermes-secrets
+                configMapKeyRef:
+                  name: hermes-config
                   key: DISCORD_ALLOWED_USERS
                   optional: true
           volumeMounts:

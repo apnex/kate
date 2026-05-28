@@ -185,7 +185,7 @@ rather than a series of patches papering over upstream coupling.
 |---|---|---|---|---|
 | 1 | Static PV with `nodeAffinity: obpc` | `hermes/manifests/pv.yaml` | Cluster default SC; hermes uses dynamic PVC | In progress |
 | 2 | `image: localhost/hermes-agent:…` | `hermes/manifests/deployment.yaml` | Public registry image; bundle can pin a tag | In progress |
-| 3 | `HERMES_HOST_SSH_TARGET=root@192.168.1.250` | `hermes/manifests/deployment.yaml` | Optional `hermes-secrets` key; default empty → `nuc` inert | Planned |
+| 3 | `HERMES_HOST_SSH_TARGET=root@192.168.1.250` | `hermes/manifests/deployment.yaml` | Optional `hermes-config` ConfigMap key; default empty → `nuc` inert | Planned |
 | 4 | `/run/user/1000` + `/root` hostPath mounts | `hermes/manifests/deployment.yaml` | Voice-bundle overlay only; non-voice bundles drop the mounts | Planned |
 
 Order-of-attack rationale: **#2 first** (publish a registry image — one push
@@ -532,7 +532,7 @@ complete before Phase 4.**
 ### Risk 4 — Live integrations (Discord, others)
 
 **What's at stake:**
-- Discord bot token (in `hermes-secrets`, survives via Secret)
+- Discord bot token (in `hermes-credentials` Secret, survives the Secret split)
 - Channel-to-topic mappings (location TBD — config? DB? PVC?)
 - Active webhooks
 - Voice channel connections

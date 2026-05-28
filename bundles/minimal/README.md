@@ -24,11 +24,11 @@ section below covers how; this table is the inventory you reason from.
 
 | Name | Kind | Required? | Scope | How generated | Lands in |
 |---|---|---|---|---|---|
-| `LITELLM_BASE_URL` | config | yes | per environment (different LLM router URL per env) | operator-supplied | `hermes-secrets` Secret |
-| `LITELLM_MODEL` | config | yes | per environment (router's model alias) | operator-supplied | `hermes-secrets` Secret |
-| `LITELLM_API_KEY` | secret | yes | per environment (one key per router) | operator-supplied | `hermes-secrets` Secret |
-| `API_SERVER_KEY` | secret | yes | **unique per deployment** | generated (`openssl rand -hex 32`) | `hermes-secrets` Secret |
-| `HERMES_PEER_NAME` | config | optional | per deployment | operator-supplied; defaults to `default-user` if absent | `hermes-secrets` Secret (key optional) |
+| `LITELLM_BASE_URL` | config | yes | per environment (different LLM router URL per env) | operator-supplied | `hermes-config` ConfigMap |
+| `LITELLM_MODEL` | config | yes | per environment (router's model alias) | operator-supplied | `hermes-config` ConfigMap |
+| `LITELLM_API_KEY` | secret | yes | per environment (one key per router) | operator-supplied | `hermes-credentials` Secret |
+| `API_SERVER_KEY` | secret | yes | **unique per deployment** | generated (`openssl rand -hex 32`) | `hermes-credentials` Secret |
+| `HERMES_PEER_NAME` | config | optional | per deployment | operator-supplied; defaults to `default-user` if absent | `hermes-config` ConfigMap (key optional) |
 
 Reading the table:
 - **Every required row is per-environment or per-deployment** — nothing is
@@ -38,11 +38,11 @@ Reading the table:
 - **`secret + generated`** (`API_SERVER_KEY`) is unique per deployment
   and generated, not retrieved. Could be auto-generated in-cluster by
   a one-shot Job, never leaving the cluster.
-- **`config` vs `secret`** is the orthogonal cut. The `config` rows
-  (`LITELLM_BASE_URL`, `LITELLM_MODEL`, `HERMES_PEER_NAME`) are
-  non-sensitive — they could live in a ConfigMap rather than a Secret.
-  Grouped with secrets today only because `set-secret`'s shape is one
-  Secret with all keys.
+- **`config` vs `secret`** is the orthogonal cut, and is now reflected
+  in two separate Kubernetes resources: non-sensitive values live in
+  the `hermes-config` ConfigMap, sensitive in the `hermes-credentials`
+  Secret. The operator workflow (`set-secret`) still creates both from
+  the same env-var inputs — the split is internal.
 
 ## Prerequisites
 
@@ -56,19 +56,20 @@ Reading the table:
 ## Install
 
 ```sh
-# 1. Namespace + Secret (out-of-band; not in GitOps yet)
-kubectl create namespace hermes
-
+# 1. Namespace + Config/Credentials (out-of-band; not in GitOps yet)
 export LITELLM_BASE_URL="https://your-llm-router/v1"
 export LITELLM_MODEL="your-default-model"
 export LITELLM_API_KEY="sk-your-key"
 export API_SERVER_KEY="$(openssl rand -hex 32)"
 
-kubectl -n hermes create secret generic hermes-secrets \
-  --from-literal=LITELLM_BASE_URL="$LITELLM_BASE_URL" \
-  --from-literal=LITELLM_MODEL="$LITELLM_MODEL" \
-  --from-literal=LITELLM_API_KEY="$LITELLM_API_KEY" \
-  --from-literal=API_SERVER_KEY="$API_SERVER_KEY"
+# apnex/hermes ships set-secret which creates the namespace + both
+# resources from these env vars. Equivalent to running:
+#   kubectl create namespace hermes
+#   kubectl -n hermes create configmap hermes-config \
+#     --from-literal=LITELLM_BASE_URL=... --from-literal=LITELLM_MODEL=...
+#   kubectl -n hermes create secret generic hermes-credentials \
+#     --from-literal=LITELLM_API_KEY=... --from-literal=API_SERVER_KEY=...
+curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
 
 # 2. The bundle — generates one ArgoCD Application (hermes) from
 #    services.yaml; hermes Application points at THIS directory, where

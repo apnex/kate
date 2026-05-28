@@ -22,15 +22,15 @@ the same as minimal; rows below the divider are default-only.
 
 | Name | Kind | Required? | Scope | How generated | Lands in |
 |---|---|---|---|---|---|
-| `LITELLM_BASE_URL` | config | yes | per environment | operator-supplied | `hermes-secrets` Secret |
-| `LITELLM_MODEL` | config | yes | per environment | operator-supplied | `hermes-secrets` Secret |
-| `LITELLM_API_KEY` | secret | yes | per environment | operator-supplied | `hermes-secrets` Secret |
-| `API_SERVER_KEY` | secret | yes | **unique per deployment** | generated (`openssl rand -hex 32`) | `hermes-secrets` Secret |
-| `HERMES_PEER_NAME` | config | optional | per deployment | operator-supplied; defaults to `default-user` | `hermes-secrets` Secret (key optional) |
+| `LITELLM_BASE_URL` | config | yes | per environment | operator-supplied | `hermes-config` ConfigMap |
+| `LITELLM_MODEL` | config | yes | per environment | operator-supplied | `hermes-config` ConfigMap |
+| `LITELLM_API_KEY` | secret | yes | per environment | operator-supplied | `hermes-credentials` Secret |
+| `API_SERVER_KEY` | secret | yes | **unique per deployment** | generated (`openssl rand -hex 32`) | `hermes-credentials` Secret |
+| `HERMES_PEER_NAME` | config | optional | per deployment | operator-supplied; defaults to `default-user` | `hermes-config` ConfigMap (key optional) |
 | --- default-only --- | | | | | |
-| `DISCORD_BOT_TOKEN` | secret | optional (feature flag) | per deployment | operator-supplied; absence → Discord gateway inert | `hermes-secrets` Secret (key optional) |
-| `DISCORD_ALLOWED_USERS` | config | optional | per deployment | operator-supplied (comma-sep Discord user IDs); absence → all DMs rejected | `hermes-secrets` Secret (key optional) |
-| `GH_TOKEN` | secret | optional | per environment (one GitHub PAT for many clusters is fine) | operator-supplied; absence → `gh`/git push from pod fails on private repos | `hermes-secrets` Secret (key optional) |
+| `DISCORD_BOT_TOKEN` | secret | optional (feature flag) | per deployment | operator-supplied; absence → Discord gateway inert | `hermes-credentials` Secret (key optional) |
+| `DISCORD_ALLOWED_USERS` | config | optional | per deployment | operator-supplied (comma-sep Discord user IDs); absence → all DMs rejected | `hermes-config` ConfigMap (key optional) |
+| `GH_TOKEN` | secret | optional | per environment (one GitHub PAT for many clusters is fine) | operator-supplied; absence → `gh`/git push from pod fails on private repos | `hermes-credentials` Secret (key optional) |
 | `HERMES_HOST_SSH_KEY` | secret | optional (feature flag) | per deployment (matches host's authorized_keys) | operator-generated PEM private key; absence → `nuc` wrapper inert | separate `hermes-host-ssh-key` Secret |
 | `LLM_OPENAI_API_KEY` | secret | yes (for honcho) | per environment | operator-supplied (same key as LITELLM_API_KEY in most configs) | separate `honcho-llm-keys` Secret in `honcho` namespace |
 
@@ -81,9 +81,7 @@ for the migration plan.
 ## Install
 
 ```sh
-# 1. hermes namespace + Secret (out-of-band; not in GitOps)
-kubectl create namespace hermes
-
+# 1. hermes namespace + Config/Credentials (out-of-band; not in GitOps)
 export LITELLM_BASE_URL="https://your-llm-router/v1"
 export LITELLM_MODEL="your-default-model"
 export LITELLM_API_KEY="sk-your-key"
@@ -93,17 +91,12 @@ export API_SERVER_KEY="$(openssl rand -hex 32)"
 # export DISCORD_ALLOWED_USERS="123,456"
 # Optional GitHub:
 # export GH_TOKEN="ghp_..."
+# Optional host SSH (PEM key body in env; enables `nuc` wrapper):
+# export HERMES_HOST_SSH_KEY="$(cat /path/to/id_ed25519)"
 
-kubectl -n hermes create secret generic hermes-secrets \
-  --from-literal=LITELLM_BASE_URL="$LITELLM_BASE_URL" \
-  --from-literal=LITELLM_MODEL="$LITELLM_MODEL" \
-  --from-literal=LITELLM_API_KEY="$LITELLM_API_KEY" \
-  --from-literal=API_SERVER_KEY="$API_SERVER_KEY"
-  # + add --from-literal=DISCORD_BOT_TOKEN/... as desired
-
-# Optional: host SSH key for `nuc` wrapper
-# kubectl -n hermes create secret generic hermes-host-ssh-key \
-#   --from-file=id_ed25519=/path/to/key
+# Creates: namespace hermes; ConfigMap hermes-config; Secret hermes-credentials;
+# optionally Secret hermes-host-ssh-key.
+curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
 
 # 2. honcho namespace + LLM key Secret (anti-stomp — out-of-band)
 kubectl create namespace honcho

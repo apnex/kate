@@ -198,8 +198,13 @@ export API_SERVER_KEY="$(openssl rand -hex 32)"
 ./set-secret
 ```
 
-This creates the `hermes` namespace and applies the `hermes-secrets`
-Secret out-of-band. Same anti-stomp pattern as Honcho.
+This creates the `hermes` namespace and applies, out-of-band:
+- `hermes-config` ConfigMap (non-sensitive: LITELLM_BASE_URL, LITELLM_MODEL,
+  optionally HERMES_PEER_NAME, DISCORD_ALLOWED_USERS)
+- `hermes-credentials` Secret (sensitive: LITELLM_API_KEY, API_SERVER_KEY,
+  optionally DISCORD_BOT_TOKEN, GH_TOKEN)
+
+Same anti-stomp pattern as Honcho.
 
 ### 3b. Configure Honcho client
 
@@ -307,7 +312,7 @@ All five succeed → stack is healthy.
 | Honcho deriver crashloops | LLM endpoint missing tool-calling | Verify with the prereq curl probe |
 | Hermes 5xx on memory calls | Honcho VIP unreachable from `hermes` ns | Check NetworkPolicies; use cluster DNS path |
 | ArgoCD App stuck "OutOfSync" | git fetch race after push | Force-sync the App or wait ~3min |
-| `hermes-secrets` Secret keeps disappearing | You put it in Git → Argo prunes it | Re-create out-of-band; never commit |
+| `hermes-credentials` Secret or `hermes-config` ConfigMap keeps disappearing | You put it in Git → Argo prunes it | Re-create out-of-band via `set-secret`; never commit |
 | MetalLB doesn't assign a VIP | No IPAddressPool configured | See `labops/metallb/` for pool examples |
 | New service VIP changed on rename | Different MetalLB pool selected | Use `metallb.universe.tf/allow-shared-ip` |
 

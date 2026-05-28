@@ -1,7 +1,8 @@
 # kate / bundles/minimal — hermes config WITHOUT honcho memory.
 # Replaces apnex/hermes/manifests/config.yaml.tpl via kustomize merge.
-# Placeholders (@LITELLM_*@) are substituted at pod start by the
-# seed-config initContainer from the hermes-secrets Secret.
+# Placeholders (@LITELLM_*@) are substituted at pod start by the seed-config
+# initContainer from the hermes-config ConfigMap (BASE_URL, MODEL) and the
+# hermes-credentials Secret (API_KEY).
 
 model:
   provider: "custom"
