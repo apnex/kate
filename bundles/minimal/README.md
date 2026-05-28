@@ -24,21 +24,25 @@ section below covers how; this table is the inventory you reason from.
 
 | Name | Kind | Required? | Scope | How generated | Lands in |
 |---|---|---|---|---|---|
-| `LITELLM_BASE_URL` | config | yes | shared across N deployments | operator-supplied | `hermes-secrets` Secret |
-| `LITELLM_MODEL` | config | yes | shared across N deployments | operator-supplied | `hermes-secrets` Secret |
-| `LITELLM_API_KEY` | secret | yes | shared across N deployments | operator-supplied | `hermes-secrets` Secret |
+| `LITELLM_BASE_URL` | config | yes | per environment (different LLM router URL per env) | operator-supplied | `hermes-secrets` Secret |
+| `LITELLM_MODEL` | config | yes | per environment (router's model alias) | operator-supplied | `hermes-secrets` Secret |
+| `LITELLM_API_KEY` | secret | yes | per environment (one key per router) | operator-supplied | `hermes-secrets` Secret |
 | `API_SERVER_KEY` | secret | yes | **unique per deployment** | generated (`openssl rand -hex 32`) | `hermes-secrets` Secret |
 | `HERMES_PEER_NAME` | config | optional | per deployment | operator-supplied; defaults to `default-user` if absent | `hermes-secrets` Secret (key optional) |
 
 Reading the table:
-- **`secret + shared`** rows (`LITELLM_API_KEY`) — one copy of the value
-  serves every cluster you stand up. Natural fit for a central store.
-- **`secret + per-deployment`** rows (`API_SERVER_KEY`) — unique per
-  cluster; generated, not retrieved. Could be auto-generated in-cluster.
-- **`config`** rows (`LITELLM_*`, `HERMES_PEER_NAME`) — non-sensitive;
-  could live in a ConfigMap (or even in the bundle for `shared` values)
-  rather than a Secret. Currently grouped with secrets for one-shape
-  operator workflow.
+- **Every required row is per-environment or per-deployment** — nothing is
+  shared globally across all kate installs. Each LLM router (env) has its
+  own URL / model alias / API key triple, so a multi-env operator
+  maintains N sets of `LITELLM_*`.
+- **`secret + generated`** (`API_SERVER_KEY`) is unique per deployment
+  and generated, not retrieved. Could be auto-generated in-cluster by
+  a one-shot Job, never leaving the cluster.
+- **`config` vs `secret`** is the orthogonal cut. The `config` rows
+  (`LITELLM_BASE_URL`, `LITELLM_MODEL`, `HERMES_PEER_NAME`) are
+  non-sensitive — they could live in a ConfigMap rather than a Secret.
+  Grouped with secrets today only because `set-secret`'s shape is one
+  Secret with all keys.
 
 ## Prerequisites
 
