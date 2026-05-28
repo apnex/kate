@@ -55,22 +55,19 @@ Reading the table:
 
 ## Install
 
-```sh
-# 1. Namespace + Config/Credentials (out-of-band; not in GitOps yet)
-export LITELLM_BASE_URL="https://your-llm-router/v1"
-export LITELLM_MODEL="your-default-model"
-export LITELLM_API_KEY="sk-your-key"
-# API_SERVER_KEY is auto-generated in-cluster by the init Job.
-# Only set it explicitly if importing a key from a previous deployment.
+Prerequisite: the per-env secrets exist in GCP Secret Manager. See
+[`../../docs/secrets.md`](../../docs/secrets.md) for the naming convention and one-time provisioning.
 
-# apnex/hermes ships set-secret which creates the namespace + both
-# resources from these env vars.
-curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
+```sh
+# 1. Populate cluster from GCP Secret Manager.
+#    Reads kate-<env>-* from your current gcloud project, creates the
+#    hermes namespace + hermes-config ConfigMap + hermes-credentials Secret.
+./scripts/bootstrap-secrets hermes-vm   # replace with your env name
 
 # 2. The bundle — generates one ArgoCD Application (hermes) from
 #    services.yaml; hermes Application points at THIS directory, where
 #    kustomization.yaml bases on apnex/hermes//manifests + overlays.
-#    On first sync, the PreSync hook Job (in upstream hermes manifests)
+#    The sync-wave-ordered init Job (in upstream hermes manifests)
 #    generates API_SERVER_KEY and patches it into hermes-credentials
 #    before the Deployment starts.
 kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/bundles/minimal/services.appset.yaml

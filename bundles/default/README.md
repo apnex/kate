@@ -80,33 +80,25 @@ for the migration plan.
 
 ## Install
 
-```sh
-# 1. hermes namespace + Config/Credentials (out-of-band; not in GitOps)
-export LITELLM_BASE_URL="https://your-llm-router/v1"
-export LITELLM_MODEL="your-default-model"
-export LITELLM_API_KEY="sk-your-key"
-# API_SERVER_KEY is auto-generated in-cluster by the init Job.
-# Only set it explicitly if importing a key from a previous deployment.
-# Optional Discord:
-# export DISCORD_BOT_TOKEN="..."
-# export DISCORD_ALLOWED_USERS="123,456"
-# Optional GitHub:
-# export GH_TOKEN="ghp_..."
-# Optional host SSH (PEM key body in env; enables `nuc` wrapper):
-# export HERMES_HOST_SSH_KEY="$(cat /path/to/id_ed25519)"
+Prerequisite: the per-env secrets exist in GCP Secret Manager. See
+[`../../docs/secrets.md`](../../docs/secrets.md) for the naming convention and one-time provisioning.
+For default, populate at minimum the required keys plus the optional
+ones for whichever features you want (Discord, GH, host SSH).
 
-# Creates: namespace hermes; ConfigMap hermes-config; Secret hermes-credentials
-# (without API_SERVER_KEY — that's auto-injected by the init Job); optionally
-# Secret hermes-host-ssh-key.
-curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash
+```sh
+# 1. Populate hermes namespace from GCP Secret Manager.
+./scripts/bootstrap-secrets hermes-vm   # replace with your env name
 
 # 2. honcho namespace + LLM key Secret (anti-stomp — out-of-band)
+#    Reads the same LITELLM_API_KEY from SM for parity with hermes.
 kubectl create namespace honcho
+LITELLM_API_KEY=$(gcloud secrets versions access latest \
+  --secret="kate-hermes-vm-LITELLM_API_KEY")
 kubectl -n honcho create secret generic honcho-llm-keys \
   --from-literal=LLM_OPENAI_API_KEY="$LITELLM_API_KEY"
 
 # 3. The bundle — generates two ArgoCD Applications (hermes + honcho).
-#    On first sync, hermes's PreSync hook Job auto-generates API_SERVER_KEY
+#    The sync-wave-ordered init Job auto-generates API_SERVER_KEY
 #    and patches hermes-credentials before the Deployment starts.
 kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/bundles/default/services.appset.yaml
 
