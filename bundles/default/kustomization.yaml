@@ -1,0 +1,28 @@
+# kate / default bundle — kustomize overlay on apnex/hermes.
+#
+# Adds back the voice + discord wiring that upstream hermes deliberately
+# omits per the component-sovereignty contract (see docs/architecture.md).
+# default is the full apnex-NUC-style install: voice in, discord in, honcho
+# memory in (the honcho entry in services.yaml stays direct, no overlay).
+#
+# Base: hermes upstream manifests at the pinned ref below. Bump deliberately
+# when validating a new hermes release against default.
+#
+# Patches (strategic merge — adds, never replaces existing fields):
+#   voice-discord.yaml  — pulse-socket volume + mount, PULSE_SERVER +
+#                         XDG_RUNTIME_DIR env, DISCORD_BOT_TOKEN +
+#                         DISCORD_ALLOWED_USERS env (optional Secret keys).
+#
+# Note: the image still ships voice + discord pip deps (libportaudio2,
+# faster-whisper, sounddevice, discord.py, PyNaCl, edge-tts) so adding the
+# env + mount is sufficient to activate the features at runtime — no image
+# variant needed for default. A future "base" image without those deps
+# would slim minimal further; out of scope here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - https://github.com/apnex/hermes//manifests?ref=main
+
+patches:
+  - path: voice-discord.yaml

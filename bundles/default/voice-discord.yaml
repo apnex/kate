@@ -1,0 +1,53 @@
+# Strategic-merge patch: add back voice + discord wiring to the hermes
+# Deployment. Strategic merge appends to env/volumeMounts/volumes lists
+# (merge by name / mountPath) — does not disturb existing entries.
+#
+# Voice (3 additions):
+#   - pod volume `pulse-socket` (hostPath /run/user/1000) — assumes the
+#     node runs PipeWire-Pulse under UID 1000 (apnex-NUC convention).
+#     Single-node only; for multi-node, pin hermes via nodeSelector.
+#   - container volumeMount `pulse-socket` at /run/user/1000
+#   - env PULSE_SERVER (unix:/run/user/1000/pulse/native) +
+#     env XDG_RUNTIME_DIR (/run/user/1000) — both required for the
+#     bot's audio I/O paths (sounddevice capture, edge-tts playback).
+#
+# Discord (2 additions):
+#   - env DISCORD_BOT_TOKEN (optional Secret key — bot gateway activates
+#     only when ./set-secret was called with DISCORD_BOT_TOKEN set).
+#   - env DISCORD_ALLOWED_USERS (optional Secret key — DM allowlist; the
+#     bot rejects every DM as unauthorized when absent).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes
+  namespace: hermes
+spec:
+  template:
+    spec:
+      volumes:
+        - name: pulse-socket
+          hostPath:
+            path: /run/user/1000
+            type: Directory
+      containers:
+        - name: hermes
+          env:
+            - name: PULSE_SERVER
+              value: "unix:/run/user/1000/pulse/native"
+            - name: XDG_RUNTIME_DIR
+              value: "/run/user/1000"
+            - name: DISCORD_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-secrets
+                  key: DISCORD_BOT_TOKEN
+                  optional: true
+            - name: DISCORD_ALLOWED_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-secrets
+                  key: DISCORD_ALLOWED_USERS
+                  optional: true
+          volumeMounts:
+            - name: pulse-socket
+              mountPath: /run/user/1000

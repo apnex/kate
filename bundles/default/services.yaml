@@ -12,10 +12,14 @@
 # kate's registry pure intent — "install hermes + honcho" — and portable
 # across substrates.
 
+# hermes: pointed at THIS directory (bundles/default), where kustomization.yaml
+# bases on apnex/hermes//manifests and adds back voice + discord wiring that
+# upstream hermes deliberately omits (per kate's substrate-agnostic component
+# contract — see docs/architecture.md "Component sovereignty").
 - name: hermes
   type: git
-  repoURL: https://github.com/apnex/hermes
-  gitPath: manifests
+  repoURL: https://github.com/apnex/kate
+  gitPath: bundles/default
   revision: main
   namespace: hermes
 
