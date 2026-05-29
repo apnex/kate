@@ -59,6 +59,7 @@ Prerequisite: secrets exist wherever you keep them (GCP Secret Manager,
 local file, password manager, etc.). See [`../../docs/secrets.md`](../../docs/secrets.md) for the
 backend-agnostic supply contract.
 
+`set-secret` reads **exported environment variables** — it has no config file of its own, so any method that exports them works:
 ```sh
 # 1. Populate env vars from your preferred backing store.
 #    Pick whichever line matches your setup:
@@ -82,6 +83,14 @@ kubectl apply -f https://raw.githubusercontent.com/apnex/kate/main/bundles/minim
 API_SERVER_KEY=$(kubectl -n hermes get secret hermes-credentials \
   -o jsonpath='{.data.API_SERVER_KEY}' | base64 -d)
 echo "$API_SERVER_KEY"   # store somewhere — bot's API auth
+```
+
+### Shortcut: labops VM
+
+On a labops VM, `/root/kate.env` is auto-exported for root login shells via `/etc/profile.d/kate-env.sh`.
+A login shell (`bash -l`) loads that env before `set-secret` runs, so steps 1–2 collapse into one self-contained line — nothing pre-staged but `kate.env`:
+```sh
+sudo bash -lc 'curl -fsSL https://raw.githubusercontent.com/apnex/hermes/main/set-secret | bash'
 ```
 
 ## Verify
